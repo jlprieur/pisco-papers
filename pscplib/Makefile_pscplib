@@ -1,0 +1,71 @@
+##############################################################################
+# Makefile for "pscplib", the library of pisco papers 
+#
+# JLP
+# Version 20/03/2020
+##############################################################################
+
+JLB=../../jlplib
+
+mylib=$(JLPLIB)/jlp
+CPP = c++
+JLIB=$(mylib)/newplot0.a $(mylib)/jlp_wxplot.a $(mylib)/jlp_splot.a \
+        $(mylib)/jlp_splot_idv.a $(mylib)/jlp_splot.a \
+        $(mylib)/jlpacc.a $(mylib)/jlp_numeric.a \
+	$(mylib)/jlp_fits.a
+
+CATALOG_OBJ=jlp_catalog_utils.o PISCO_catalog_utils.o \
+	WDS_catalog_utils.o \
+	OC6_catalog_utils.o HIP_catalog_utils.o residuals_utils.o
+CATALOG_SRC=$(CATALOG_OBJ:.o=.c)
+DEP_CATALOG=jlp_catalog_utils.h jlp_catalog_utils.c \
+	PISCO_catalog_utils.c PISCO_catalog_utils.h  WDS_catalog_utils.h \
+	OC6_catalog_utils.c OC6_catalog_utils.h \
+	HIP_catalog_utils.h residuals_utils.h 
+
+ASTROM_OBJ=astrom_utils1.o astrom_utils_pdb.o astrom_utils2.o 
+ASTROM_SRC=$(ASTROM_OBJ:.o=.c)
+DEP_ASTROM_=astrom_utils1.h astrom_utils2.h $(DEP_ASTROM_SRC) 
+
+MYPLOT_OBJ=orbit_plot_utils.o orbit_plot_xy.o
+MYPLOT_SRC=$(MYPLOT_OBJ:.o=.c)
+DEP_MYPLOT=orbit_plot_utils.h  $(MYPLOT_SRC)
+
+WX_LIB := `wx-config --libs base,core`
+CFLAGS = -g -I. -I$(JLB)/jlp_fits -I$(JLB)/jlp_numeric \
+	-I$(JLB)/jlp_cfitsio/incl -I$(JLB)/jlp_splot_idv \
+	-I$(JLB)/jlp_splot
+
+
+.SUFFIXES:
+.SUFFIXES:  .o .c.cpp .for $(SUFFIXES) 
+
+.cpp.o:
+	$(CPP) -c $(CFLAGS) $*.cpp
+
+.c.o:
+	$(CC) -c $(CFLAGS) $*.c
+
+.for.o:
+	$(F77) -c $(FFLAGS) $*.for
+
+all: $(CATALOG_OBJ) $(ASTROM_OBJ) $(MYPLOT_OBJ)
+
+astrom_utils1.o : astrom_utils1.c astrom_utils1.h
+
+astrom_utils2.o : astrom_utils2.c astrom_utils1.h astrom_utils2.h
+
+astrom_utils_pdb.o : astrom_utils_pdb.c astrom_utils1.h astrom_utils2.h
+
+jlp_catalog_utils.o : jlp_catalog_utils.c $(DEP_CATALOG)
+
+OC6_catalog_utils.o : OC6_catalog_utils.c $(DEP_CATALOG)
+
+PISCO_catalog_utils.o : PISCO_catalog_utils.c $(DEP_CATALOG)
+
+WDS_catalog_utils.o : WDS_catalog_utils.c $(DEP_CATALOG)
+
+residuals_utils.o : residuals_utils.h
+
+clean :
+	rm -f $(CATALOG_OBJ) $(ASTROM_OBJ) $(MYPLOT_OBJ)

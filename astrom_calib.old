@@ -1,0 +1,2193 @@
+/*************************************************************************
+* Program latex_calib
+* To convert a Latex array with measurements in pixels to array in arcseconds
+* (and conversion of angles from XY axis to Noth-East referential)
+*
+* Format of input files:
+\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|}
+& Name  & Epoch & Filter & Eyep. & $\rho$ & $\sigma_\rho$ & $\theta$ &
+$\sigma_\theta$ & comments \\
+ &       &       &        & (mm)
+& (pixels) & (pixels) & (deg.) & (deg.) & \\
+\hline % -----------------------------------------------------------------------
+%%
+16564+6502 = STF 2118 AB & ADS 10279 & 2004. & & & & & & & orb \\
+%%
+%% 090904_ads10279_Vd_a
+%% Thresholds: -1,8
+%% rho_center=14.62 (+/-1.87) theta_center=156.71 (+/-7.32)or theta=-23.29
+%% rho_center=14.72 theta_center=156.70  or theta = -23.30
+%% rho_center=14.37 (+/-1.89) theta_center=-23.64 (+/-7.54)
+%% rho_center=14.34 theta_center=-23.73
+%% mean: rho = 14.50 \pm 0.17  theta = -23.61 \pm 0.27 (too small -> 0.3)(n=8)
+& 090904\_ads10279\_Vd\ & 09/09/2004 & V & 20 & 14.50 & 0.17 & -23.61 & 0.3 & \\
+....
+*
+Keywords in the notes:
+EP=2004.133 (epoch)
+WR=127      (Rho, WDS)
+WT=127      (Theta, WDS)
+WY=2002     (Year of WDS observation) 
+Q=2         (Quadrant with restricted triple-correplation)
+LQ=3        (Quadrant with long integration)
+*
+* JLP
+* Version 20/01/2009
+*************************************************************************/
+#include <stdio.h>
+#include <stdlib.h>   /* definition of exit() */
+#include <math.h>
+#include <malloc.h>
+#include <string.h>
+
+/* Maximum length for a line will be 170 characters: */
+#define NMAX 360
+
+/* Positive number (to be able to compute sqrt in compute_mean) */
+#define NO_DATA 10000.
+#define SQUARE(x) ((x)*(x))
+#define ABS(x) ((x) >= 0.) ? (x) : (-(x))
+#define MINI(x,y) ((x) < (y)) ? (x) : (y)
+#define MAXI(x,y) ((x) < (y)) ? (y) : (x)
+ 
+/*
+#define DEBUG
+*/
+
+/* Maximum number of measurements per object: */
+#define NMEAS 30
+/* Maximum number of objects: */
+#define NOBJ_MAX 500
+
+/* Structure to define a measurement: */
+typedef struct {
+char comments[30][80]; 	/* Comments (lines starting with %) */
+char data[180];         /* Data: line with filename, filter, measurements */
+char filename[40];      /* Name of the FITS file used for this measurement */
+char date[12];          /* Date, e.g., 29/12/2004 */
+double epoch;            /* Julian day as a fraction of year, e;g., 2004.23 */
+char filter[10];        /* Filter name: V, R, Sf */
+int eyepiece;           /* Focal length of the magnifying eyepiece */
+int quadrant;           /* Quadrant value */
+int dquadrant;          /* Quadrant uncertainty (0 or 1) */
+double rho;              /* Angular separation of the binary (arcseconds) */
+double drho;             /* Error on rho (arcseconds) */
+double theta;            /* Position angle of the companion (relative to North)*/
+double dtheta; 		/* Error on theta (degrees) */
+char notes[80];         /* Notes in the last column of the data line */
+int flagged_out;        /* Flag to cancel output (for publication) */
+} MEASURE; 
+
+/* Structure to define an object */
+typedef struct {
+char wds[40];		/* WDS name */
+char name[40];		/* Official binary name */
+char ads[40];		/* ADS name */
+MEASURE measure[NMEAS];	/* Measurements concerning this object */
+char notes[80];		/* Notes which are common to all measurements */
+double ra; 		/* Right ascension */
+int dec; 		/* Declination */
+int orbit;              /* Flag, set to one if orbit */
+int nmeas;              /* Nber of measurements for this object*/
+double WR;               /* Radius value of last measurement in WDS_CHARA data base */
+double WT;               /* Theta value of last measurement in WDS_CHARA data base */
+double WY;               /* Year of last measurement in WDS_CHARA data base */
+} OBJECT;
+
+static int latex_calib_publi(FILE *fp_in, FILE *fp_out, double scale_10,
+                             double scale_20, double theta0, double sign,
+                             int i_filename, int i_date, int i_filter,
+                             int i_eyepiece, int i_rho, int i_drho,
+                             int i_theta, int i_dtheta, int i_notes,
+                             int comments_wanted, int work_mode, char *filein);
+static int latex_calib_copy(FILE *fp_in, FILE *fp_out, double scale_10, 
+                            double scale_20, double theta0, double sign, 
+                            int i_date, int i_eyepiece, int i_rho, int i_drho, 
+                            int i_theta, int i_dtheta, int comments_wanted);
+static int calibrate_measures(OBJECT *obj, int nobj, double scale_10, 
+                              double scale_20, double theta0, double sign);
+static int calib_data_copy(char *b_data, char *b_out, double scale_10, 
+                           double scale_20, double theta0, double sign, 
+                           int i_date, int i_eyepiece, int i_rho, int i_drho, 
+                           int i_theta, int i_dtheta);
+static int decode_data(char *b_data, char *date, double *epoch, double *rho, 
+                       double *drho, 
+                       double *theta, double *dtheta, int *eyepiece, int i_date, 
+                       int i_eyepiece, int i_rho, int i_drho, int i_theta, 
+                       int i_dtheta);
+static int read_dvalue(char *b_data, int *value, int icol);
+static int read_fvalue(char *b_data, double *value, int icol); 
+static int read_svalue(char *b_data, char *value, int icol); 
+static int read_object_data(char *b_data, char *wds_name, char *official_name,
+                            char *ads_name, int *orbit, double *WR, double *WT, 
+                            double *WY, int i_notes);
+static int read_WDS_CHARA(char *notes, double *WR, double *WT, double * WY);
+static int read_quadrant_Q(char *notes, int *quadrant, int *dquadrant,
+                           int comments_wanted);
+static int read_quadrant_LQ(char *notes, int *quadrant, int *dquadrant,
+                            int comments_wanted);
+static int write_fvalue(char *b_data, char *b_out, double value, int icol,
+                         int nber_of_decimals);
+static int read_epoch(char *notes, double *epoch, int comments_wanted);
+static int compute_epoch_value(char *b_data, char *date, double *epoch , int icol); 
+int julian(double aa, int mm, int idd, double time, double *djul);
+int besselian_epoch(double aa, int mm, int idd, double time, double *b_date);
+
+static int add_new_measure(char *b_data, OBJECT *obj, int nobj, int i_filename, 
+                           int i_date, int i_filter, int i_eyepiece, int i_rho,
+                           int i_drho, int i_theta, int i_dtheta, int i_notes,
+                           int comments_wanted);
+static int add_new_object(char *b_data, OBJECT *obj, int *nobj, int i_notes);
+static int check_measure(char *b_data, int i_eyepiece, int i_rho, int i_drho, 
+                         int i_theta, int i_dtheta);
+static int read_measures(FILE *fp_in, int comments_wanted, OBJECT *obj, 
+                         int *nobj, int i_filename, int i_date, 
+                         int i_filter, int i_eyepiece, int i_rho, 
+                         int i_drho, int i_theta, int i_dtheta, int i_notes);
+static int write_publi_table(FILE *fp_out, int comments_wanted, OBJECT *obj, 
+                             int *index_obj, int nobj);
+static int compute_statistics(FILE *fp_out, OBJECT *obj, int nobj, 
+                              char *filein);
+static int ra_sort_objects(OBJECT *obj, int *index_obj, int nobj);
+static int JLP_QSORT_INDX(double *array, int *index, int *nn);
+static void qs2(double *array, int *index, int left, int right);
+static int mean_for_paper2(OBJECT *obj, int nobj);
+static int is_record_file(char *filename);
+static int is_direct_file(char *filename);
+static int compute_mean_of_two_measures(OBJECT *obj, int io, int jm1, int jm2);
+static int quadrant_is_consistent(MEASURE *me);
+static int correct_theta_with_WDS_CHARA(OBJECT *ob, MEASURE *me);
+static int preformat_wds_name(char *obj_wds, char *wds_name);
+static int check_if_object_name(char *b_in, int *contains_object_name);
+
+int main(int argc, char *argv[])
+{
+double scale_10, scale_20, theta0, sign;
+char filein[60], fileout[60];
+int i_filename, i_date, i_filter, i_eyepiece, i_rho, i_drho, i_theta, i_dtheta; 
+int i_notes;
+int comments_wanted, publi_mode, work_mode;
+FILE *fp_in, *fp_out;
+
+/* If command line with "runs" */
+if(argc == 7){
+ if(*argv[4]) argc = 5;
+ else if(*argv[3]) argc = 4;
+ else if(*argv[2]) argc = 3;
+ else if(*argv[1]) argc = 2;
+ else argc = 1;
+ }
+
+
+if(argc != 5)
+  {
+  printf(" Syntax: latex_calib scale_10,scale_20,sign,theta0 in_file out_file comments_wanted,publi_mode \n");
+  printf(" out_rho = in_rho * scale_10  (or in_rho * scale_20 if 20 mm eyepiece)\n");
+  printf(" out_theta = in_theta * sign + theta0 \n");
+  printf(" Example: runs latex_calib 0.0321,0.0753,1.,89.58 astrom05aa.tex calib.tex 0,1  (without comments, publication mode)\n");
+  printf(" Example: runs latex_calib 0.0321,0.0753,1.,89.58 astrom05aa.tex calib.tex 1,0  (with comments, no publication)\n");
+  exit(-1);
+  }
+else
+  {
+  sscanf(argv[1],"%lf,%lf,%lf,%lf", &scale_10, &scale_20, &sign, &theta0);
+  strcpy(filein,argv[2]);
+  strcpy(fileout,argv[3]);
+  sscanf(argv[4],"%d,%d", &comments_wanted, &publi_mode);
+  }
+  printf(" OK: out_rho = in_rho * %g (for 10 mm eyepiece)\n", scale_10);
+  printf(" OK: out_rho = in_rho * %g (for 20 mm eyepiece)\n", scale_20);
+  printf(" OK: out_theta = in_theta * %g + %g \n", sign, theta0);
+
+printf(" OK: filein=%s fileout=%s comments_wanted=%d publi_mode=%d\n",
+       filein,fileout,comments_wanted,publi_mode);
+
+if((fp_in = fopen(filein,"r")) == NULL)
+{
+printf(" Fatal error opening input file %s \n",filein);
+exit(-1);
+}
+
+if((fp_out = fopen(fileout,"w")) == NULL)
+{
+printf(" Fatal error opening output file %s \n",fileout);
+fclose(fp_in);
+exit(-1);
+}
+fprintf(fp_out,"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n");
+fprintf(fp_out,"%%%% Automatic conversion with latex_calib\n");
+fprintf(fp_out,"%%%% JLP / Version of 23/09/2008 \n");
+fprintf(fp_out,"%%%% out_rho = in_rho * %g (for 10 mm eyepiece)\n", scale_10);
+fprintf(fp_out,"%%%% out_rho = in_rho * %g (for 20 mm eyepiece)\n", scale_20);
+fprintf(fp_out,"%%%% out_theta = in_theta * %g + %g \n", sign, theta0);
+fprintf(fp_out,"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n");
+
+if(publi_mode) {
+fprintf(fp_out,"%%%% File automatically generated with latex_calib (Version 23/09/2008)\n");
+fprintf(fp_out,"%%%% Convention for Papers II, III & IV (Merate): \n");
+fprintf(fp_out,"%%%% Publication mode: only direct measurement is kept when rho > 0.3\" \n");
+fprintf(fp_out,"%%%% Weighted mean between direct and recorded measurements when rho <= 0.3\" \n");
+fprintf(fp_out,"%%%% Minimum error for rho: 0.1 pixel  or 0.5%% \n");
+fprintf(fp_out,"%%%% Minimum error for theta: 0.3 degree \n");
+}
+
+/* Scan the file and make the conversion: */
+/* date in column 3 
+*  eyepiece in column 5
+*  rho in column 6
+*  drho in column 7
+*  theta in column 8
+*  dtheta in column 9
+*/
+  i_filename = 2;
+  i_date = 3;
+  i_filter = 4;
+  i_eyepiece = 5;
+  i_rho = 6;
+  i_drho = 7;
+  i_theta = 8;
+  i_dtheta = 9;
+  i_notes = 10;
+  work_mode = 1;
+/* Version "publi", to generate a laTeX array formatted for publication:
+* sort out the objects, compute mean values, perform calibration, etc.
+*/ 
+  if(publi_mode)
+  latex_calib_publi(fp_in,fp_out, scale_10, scale_20, theta0, sign, 
+                    i_filename, i_date, i_filter, i_eyepiece, i_rho, i_drho, 
+                    i_theta, i_dtheta, i_notes, comments_wanted, work_mode,
+                    filein);
+/* Version "copy", to copy all the contents, and simply convert the 
+* measurements to arcseconds and degrees relative to North 
+*/ 
+  else
+  latex_calib_copy(fp_in,fp_out, scale_10, scale_20, theta0, sign, i_date, 
+              i_eyepiece, i_rho, i_drho, i_theta, i_dtheta, comments_wanted);
+
+fclose(fp_in);
+fclose(fp_out);
+return(0);
+}
+/*************************************************************************
+*
+* INPUT:
+* i_eyepiece: column nber of eyepiece focal length information
+* i_rho: column nber with rho values
+* i_drho: column nber with drho values
+* i_theta: column nber with theta values
+* i_dtheta: column nber with dtheta values
+* comments_wanted: 1 if comments are wanted, 0 otherwise
+*************************************************************************/
+static int latex_calib_copy(FILE *fp_in, FILE *fp_out, double scale_10, 
+                            double scale_20, double theta0, double sign, 
+                            int i_date, int i_eyepiece, int i_rho, int i_drho, 
+                            int i_theta, int i_dtheta, int comments_wanted)
+{
+char b_in[NMAX], b_data[NMAX];
+int inside_array, line_is_opened, status;
+int line_with_object_name, nlines, nl_max, contains_object_name;
+char *pc, *pc1;
+
+/* Landscape: nl_max= 50 */
+nl_max = 50;
+nlines = 0;
+
+inside_array = 0;
+line_is_opened = 0;
+
+while(!feof(fp_in))
+{
+/* Maximum length for a line will be 170 characters: */
+  if(fgets(b_in,170,fp_in))
+  {
+  line_with_object_name = 0;
+  b_in[169] = '\0';
+/* NEW/2009: I remove ^M (Carriage Return) if present: */
+  pc = b_in;
+  while(*pc) {
+  if(*pc == '\r') *pc = ' ';
+  pc++;
+  }
+ 
+/* Analyse this line: */
+    if(!strncmp(b_in,"\\begin{tabular}",15)){
+       inside_array = 1;
+#ifdef DEBUG
+printf(" OK: >%s< inside_array=%d\n", b_in, inside_array);
+#endif
+        }
+    else if(!strncmp(b_in,"\\end{tabular}",13)){
+       inside_array = 0;
+#ifdef DEBUG
+printf(" OK: >%s< inside_array=%d\n", b_in, inside_array);
+#endif
+       }
+// JLP2009: to correct the possible case of " %%" instead of "%%":
+    else if(inside_array && (b_in[0] != '%' && b_in[1] != '%')
+            && strncmp(b_in,"\\hline",6)) {
+       if(!line_is_opened) {
+         strcpy(b_data, b_in);
+         }
+/* Fill the data array with the next line */
+       else {
+/* Look for the first zero (end of string marker) or CR ('\r') in data buffer */
+         b_data[119] = '\0';
+         pc1 = b_data;
+         while(*pc1) pc1++; 
+         pc1--; 
+/* Then copy the second line from there*/
+         strcpy(pc1, b_in);
+         }
+
+/* Check if this line is ended with "\\": */
+         line_is_opened = 1;
+         pc = b_data;
+         while(*pc) {
+           if(!strncmp(pc,"\\\\",2)){
+             line_is_opened = 0;
+             pc += 2; *pc = '\n'; pc++; *pc = '\0';
+             break;
+             }
+           pc++;
+           } 
+#ifdef DEBUG
+printf(" Data line: >%s<\n", b_data);
+printf(" line_is_opened=%d\n", line_is_opened);
+#endif
+     if(!line_is_opened) { 
+       status = calib_data_copy(b_data, b_in, scale_10, scale_20, theta0, sign, 
+                                i_date, i_eyepiece, i_rho, i_drho, i_theta, 
+                                i_dtheta);
+       }
+    } 
+
+/* Write to Latex output file: */
+    if(!line_is_opened) {
+// JLP2009: to correct the possible case of " %%" instead of "%%":
+      if(comments_wanted  || (b_in[0] != '%' && b_in[1] != '%')) {
+        if(inside_array && (b_in[0] != '%' && b_in[1] != '%')) nlines++;
+/* End table if page is full and current line contains an object name*/
+        check_if_object_name(b_in, &contains_object_name);
+        if(nlines > nl_max && contains_object_name) {
+          fprintf(fp_out,"\\end{tabular} \n");
+          fprintf(fp_out,"\\end{table} \n");
+          fprintf(fp_out,"\n \\newpage \n");
+          fprintf(fp_out,"\\begin{table} \n");
+          fprintf(fp_out,"\\tabcolsep=1mm \n");
+          fprintf(fp_out,"\\caption{Relative astrometry of binary stars (cont.)} \n");
+          fprintf(fp_out,"\\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|} \n");
+          fprintf(fp_out,"\\hline \n");
+/*
+          fprintf(fp_out,"& & & & & & & & & \\\\ \n");
+*/
+          nlines = 0;
+        }
+// Write current line content to file:
+        fputs(b_in,fp_out);
+      } /* EOF comments_wanted, b_in != % */ 
+    }  /* EOF !line_is_opened */
+  } /* EOF if fgets() */
+} /* EOF while loop */
+
+/* Epilog: */
+     fprintf(fp_out,"\\end{tabular} \n");
+     fprintf(fp_out,"\\end{table} \n");
+     fprintf(fp_out,"\\end{document} \n");
+return(0);
+}
+/*************************************************************************
+* Publication mode
+*
+* INPUT:
+* i_filename: column nber of the filename used for this measurement
+* i_eyepiece: column nber of eyepiece focal length information
+* i_rho: column nber with rho values
+* i_drho: column nber with drho values
+* i_theta: column nber with theta values
+* i_dtheta: column nber with dtheta values
+* comments_wanted: 1 if comments are wanted, 0 otherwise
+*************************************************************************/
+static int latex_calib_publi(FILE *fp_in, FILE *fp_out, double scale_10, 
+                             double scale_20, double theta0, double sign, 
+                             int i_filename, int i_date, int i_filter,
+                             int i_eyepiece, int i_rho, int i_drho,
+                             int i_theta, int i_dtheta, int i_notes,
+                             int comments_wanted, int work_mode, char *filein)
+{
+OBJECT *obj;
+int *index_obj;
+int nobj;
+
+if((obj = (OBJECT *)malloc(NOBJ_MAX * sizeof(OBJECT))) == NULL) {
+  printf("Fatal error allocating memory space for OBJECT: nobj_max=%d\n", 
+          NOBJ_MAX);
+  exit(-1);
+  }
+if((index_obj = (int *)malloc((NOBJ_MAX) * sizeof(int))) == NULL) {
+  printf("Fatal error allocating memory space for index_obj: nobj_max=%d\n", 
+          NOBJ_MAX);
+  exit(-1);
+  }
+
+read_measures(fp_in, comments_wanted, obj, &nobj, i_filename, i_date, 
+              i_filter, i_eyepiece, i_rho, i_drho, i_theta, i_dtheta, i_notes);
+
+#ifdef DEBUG
+printf("Returned by read_measures: nobj = %d\n", nobj);
+#endif
+
+calibrate_measures(obj, nobj, scale_10, scale_20, theta0, sign);
+
+/* Sort the objects according to their Right Ascension: */
+ra_sort_objects(obj, index_obj, nobj);
+
+/* Compute mean values for the objects with rho < 0.3" (Merate-Paper II) */
+mean_for_paper2(obj, nobj);
+
+write_publi_table(fp_out, comments_wanted, obj, index_obj, nobj);
+
+compute_statistics(fp_out, obj, nobj, filein);
+
+free(index_obj);
+free(obj);
+return(0);
+}
+/*****************************************************************************
+* Write the LateX array in a new format 
+*
+*****************************************************************************/
+static int write_publi_table(FILE *fp_out, int comments_wanted, OBJECT *obj, 
+                             int *index_obj, int nobj)
+{
+MEASURE *me, *me_next;
+int good_q, nm, io, nlines, jj, jnext, nl_max, status;
+char qflag[20], asterisk[20], exclam[20], q_error[1], wds_name[40], q_notes[20];
+register int i, j;
+
+/* Portrait: nl_max=55 (MNRAS for one page) */
+/* Landscape: nl_max= 30 */
+ if(comments_wanted)
+   nl_max = 30;
+ else
+   nl_max = 53;
+
+strcpy(asterisk,"\\rlap{$^*$}");
+strcpy(exclam,"\\rlap{!}");
+
+fprintf(fp_out,"\\def\\idem{''} \n");
+
+nlines = -1;
+
+for(i = 0; i < nobj; i++) {
+  io = index_obj[i];
+  nm = (obj[io]).nmeas;
+/* New table header in publi_mode */
+  if(nlines > nl_max) {
+    fprintf(fp_out,"& & & & & & & & & & & \\\\ \n");
+    fprintf(fp_out,"\\hline \n");
+    fprintf(fp_out,"\\end{tabular*} \n");
+    fprintf(fp_out,"\\end{table*} \n");
+  }
+  if((nlines == -1) || (nlines > nl_max)) {
+/* JLP to obtain the same table nber:
+*/
+    if(nlines != -1) fprintf(fp_out,"\\addtocounter{table}{-1}\n");
+    fprintf(fp_out,"\\begin{table*} \n");
+    fprintf(fp_out,"\\tabcolsep=1mm \n");
+    fprintf(fp_out,"\\begin{tabular*}{\\textwidth}{clrcccccrccl} \n");
+    fprintf(fp_out,"\\hline \n");
+    fprintf(fp_out,"& & & & & & & & & & & \\\\ \n");
+    fprintf(fp_out,"WDS & Name & ADS & Epoch & Fil. & Eyep. & $\\rho$ & $\\sigma_\\rho$ & \\multicolumn{1}{c}{$\\theta$} & $\\sigma_\\theta$ & Orb. & Notes \\\\ \n");
+    fprintf(fp_out,"& &       &       &        & (mm)& (\") & (\") & ($^\\circ$) & ($^\\circ$) & & \\\\ \n");
+    fprintf(fp_out,"& & & & & & & & & & & \\\\ \n");
+    fprintf(fp_out,"\\hline \n");
+    fprintf(fp_out,"& & & & & & & & & & & \\\\ \n");
+    nlines = 0;
+  }
+
+  jj = 0;
+/************* Loop on measurements: **********************/
+  for(j = 0; j < nm; j++) {
+    me = &(obj[io]).measure[j];
+/* BOF case not_flagged */
+    if(!me->flagged_out) {
+/* For DEBUG:
+if(i < 4) {
+  printf("i= %d io=%d nm=%d j=%d flag=%d\n", i, io, nm, j, me->flagged_out);
+  printf(" WDS=%s rho=%.2f drho=%.2f theta=%.2f dtheta=%.2f eyepiece=%d\n", 
+           obj[io].wds, me->rho, me->drho, me->theta, me->dtheta, me->eyepiece);
+  }
+*/
+
+/* JLP2007: I check if among the next measurements there exists
+* another one with the same epoch and filter
+* than the current measurement: if it is the case, compute
+* the mean of the two: */
+    for(jnext = j+1; jnext < nm; jnext++) {
+       me_next = &(obj[io]).measure[jnext];
+       if(!me_next->flagged_out && (ABS(me->epoch - me_next->epoch) < 0.001) 
+         && !strncmp(me->filter,me_next->filter,3)
+         && (me->eyepiece == me_next->eyepiece)
+         && (me_next->rho != NO_DATA) && (me_next->theta != NO_DATA) ) {
+         printf("write_publi/Warning same filter, epoch and eyepiece for object %s: I compute the mean (j=%d, jnext=%d)\n",
+          obj[io].wds, j, jnext);
+         printf("(filter=%s, epoch=%.4f, eyepiece=%d)\n", me->filter, me->epoch,
+                 me->eyepiece);
+         compute_mean_of_two_measures(obj, io, j, jnext);
+         }
+      }
+
+  good_q = quadrant_is_consistent(me);
+/* Case when quadrant was found and theta is OK: */
+  if(good_q == 1) 
+    strcpy(qflag,asterisk);
+/* Case when quadrant was found and theta needs correction: */
+/* For Paper III: automatic correction of theta according to quadrant: */
+  else if(good_q == -1) {
+     me->theta += 180.;
+     if(me->theta > 360.) me->theta -= 360.;
+     strcpy(qflag,asterisk);
+     }
+/* Case when quadrant was not found (good_q = 0)*/
+/* Check if measurements in 3rd Interferometric Catalog: */ 
+  else {
+    strcpy(qflag," ");
+    status=1;
+    if((obj[io]).WY != -1 && me->theta != NO_DATA) { 
+           status = correct_theta_with_WDS_CHARA(&(obj[io]),me);
+           }
+    if(status) strcpy(qflag,exclam);
+    }
+
+  *q_error = (me->dquadrant == 1) ? '?' : ' ';
+#ifdef Q_IN_NOTES
+    sprintf(q_notes, "q=%d%c", me->quadrant, *q_error);
+#else
+    *q_notes = '\0';
+#endif
+
+  if(jj == 0) {
+     preformat_wds_name(obj[io].wds, wds_name);
+/*** Format for first line of an object */
+/* October 2008: 3 decimals for the epoch */
+  if(me->rho != NO_DATA) 
+    fprintf(fp_out,"%s & %s & %s & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f & %d & %s %s\\\\\n", 
+         wds_name, obj[io].name, obj[io].ads, me->epoch, me->filter, 
+         me->eyepiece, me->rho, me->drho, me->theta, qflag, me->dtheta, 
+         obj[io].orbit, me->notes, q_notes);
+  else
+    fprintf(fp_out,"%s & %s & %s & %.3f & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata & %d & %s \\\\\n", 
+         wds_name, obj[io].name, obj[io].ads, me->epoch, me->filter, 
+         me->eyepiece, obj[io].orbit, me->notes);
+  } /* EOF j == 0 */
+/*** Format for subsequent lines of an object */
+  else {
+  if(me->rho != NO_DATA) 
+    fprintf(fp_out,"\\idem & \\idem & \\idem & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f & %d & %s %s\\\\\n", 
+         me->epoch, me->filter, 
+         me->eyepiece, me->rho, me->drho, me->theta, qflag, me->dtheta, 
+         obj[io].orbit, me->notes, q_notes);
+  else
+    fprintf(fp_out,"\\idem & \\idem & \\idem & %.3f & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata & %d & %s \\\\\n", 
+         me->epoch, me->filter, me->eyepiece, obj[io].orbit, me->notes);
+  } /* EOF j != 0 */
+ nlines++;
+ jj++;
+ } /* EOF case not_flagged */
+ } /* EOF loop on j */
+} /* EOF loop on i */
+
+ fprintf(fp_out,"& & & & & & & & & & & \\\\ \n");
+ fprintf(fp_out,"\\hline \n");
+ fprintf(fp_out,"\\end{tabular*} \n \n");
+ fprintf(fp_out,"Note: In column 9, the exponent $^*$ indicates that the position angle\n");
+ fprintf(fp_out,"$\\theta$ could be determined without the 180$^\\circ$ ambiguity.\n");
+\
+ fprintf(fp_out,"\\end{table*} \n");
+
+return(0);
+}
+/*****************************************************************************
+* Read the measurements and object parameters from the input file 
+*
+* INPUT:
+* i_filename: column nber of the filename used for this measurement
+* i_eyepiece: column nber of eyepiece focal length information
+* i_rho: column nber with rho values
+* i_drho: column nber with drho values
+* i_theta: column nber with theta values
+* i_dtheta: column nber with dtheta values
+*****************************************************************************/
+static int read_measures(FILE *fp_in, int comments_wanted, OBJECT *obj, 
+                         int *nobj, int i_filename, int i_date, 
+                         int i_filter, int i_eyepiece, int i_rho, 
+                         int i_drho, int i_theta, int i_dtheta, int i_notes)
+{
+char b_in[NMAX], b_data[NMAX];
+char wds_name[40], official_name[40], ads_name[40]; 
+int inside_array, line_is_opened, status, orbit, line_to_reject;
+char *pc, *pc1;
+
+inside_array = 0;
+line_to_reject = 0;
+line_is_opened = 0;
+wds_name[0] = '\0';
+official_name[0] = '\0';
+ads_name[0] = '\0';
+orbit = 0;
+*nobj = 0;
+
+while(!feof(fp_in))
+{
+/* Maximum length for a line will be 170 characters: */
+  if(fgets(b_in,170,fp_in))
+  {
+  b_in[169] = '\0';
+/* NEW/2009: I remove ^M (Carriage Return) if present: */
+  pc = b_in;
+  while(*pc) {
+  if(*pc == '\r') *pc = ' ';
+  pc++;
+  }
+ 
+    if(!strncmp(b_in,"\\begin{tabular}",15)){
+       inside_array = 1;
+       strcpy(b_in,"\\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|} \n");
+        }
+    else if(!strncmp(b_in,"\\end{tabular}",13)){
+       inside_array = 0;
+       }
+    else if(inside_array && (b_in[0] != '%' && b_in[1] != '%')
+            && strncmp(b_in,"\\hline",6)) {
+       if(!line_is_opened) {
+         strcpy(b_data, b_in);
+         }
+/* Fill the data array with the next line */
+       else {
+/* Look for the first zero (end of string marker) in data buffer */
+         b_data[119] = '\0';
+         pc1 = b_data;
+         while(*pc1) pc1++; 
+         pc1--; 
+/* Then copy the second line from there*/
+         strcpy(pc1, b_in);
+         }
+
+/* Check if this line is ended with "\\": */
+         line_is_opened = 1;
+         pc = b_data;
+         while(*pc) {
+           if(!strncmp(pc,"\\\\",2)){
+             line_is_opened = 0;
+             pc += 2; *pc = '\n'; pc++; *pc = '\0';
+             break;
+             }
+           pc++;
+           } 
+     if(!line_is_opened) { 
+#ifdef DEBUG
+printf(" Data line: >%s<\n", b_data);
+#endif
+       status = check_measure(b_data, i_eyepiece, i_rho, i_drho, 
+                              i_theta, i_dtheta);
+       
+       if(!status) {
+           add_new_measure(b_data, obj, *nobj, i_filename, i_date, i_filter, 
+                           i_eyepiece, i_rho, i_drho, i_theta, i_dtheta, 
+                           i_notes, comments_wanted);
+           } else {
+/* Try to add a new object: */
+              status = add_new_object(b_data, obj, nobj, i_notes);
+           }
+       } /* EOF !line_is_opened */
+    } 
+  } /* EOF if fgets() */
+} /* EOF while loop */
+return(0);
+}
+/**************************************************************************
+* Check if current line is that of a new object.
+* If so, load corresponding data into new OBJECT structure
+*
+**************************************************************************/
+static int add_new_object(char *b_data, OBJECT *obj, int *nobj, int i_notes)
+{ 
+OBJECT *ob;
+double WR, WT, WY;
+char wds_name[40], official_name[40], ads_name[40], *pc, buffer[40];
+int status, orbit, ih, im;
+
+ob = &obj[*nobj];
+status = read_object_data(b_data, wds_name, official_name, ads_name, &orbit,
+                          &WR, &WT, &WY, i_notes);
+
+if(!status) {
+  strcpy(ob->wds, wds_name);
+  strcpy(ob->ads, ads_name);
+  strcpy(ob->name, official_name);
+  ob->nmeas = 0;
+  ob->orbit = orbit;
+  (*nobj)++;
+
+/* Decode Right Ascension from WDS name: */
+  ob->ra = 0.;
+  strcpy(buffer, wds_name);
+  pc = buffer;
+  while(*pc && (*pc != '+') && (*pc != '-')) pc++;
+  if((*pc == '+') || (*pc == '-')) {
+    *pc = '\0';
+    sscanf(buffer,"%2d%3d", &ih, &im);
+/* Divide "im" by 600, since "im" is measured in tenths of minutes: */
+    ob->ra = (double)ih + ((double)im)/600.;
+    }
+/* Decode Declination from WDS name: */
+  ob->dec = 0.;
+  pc = wds_name;
+  while(*pc && (*pc != '+') && (*pc != '-')) pc++;
+  if((*pc == '+') || (*pc == '-')) {
+    strcpy(buffer,pc);
+    sscanf(buffer,"%d", &ih);
+    ob->dec = ih;
+    }
+  
+/* WDS data, if available: */
+  ob->WR = WR;
+  ob->WT = WT;
+  ob->WY = WY;
+
+#ifdef DEBUG
+  printf(" New object added: nobj = %d\n", *nobj);
+  printf(" name= %s %s %s orbit=%d", ob->wds, ob->name, ob->ads, ob->orbit);
+  printf(" ra= %f dec=%d WR=%f WT=%f WY=%f\n", ob->ra, ob->dec, 
+           ob->WR, ob->WT, ob->WY);
+#endif
+  }
+
+return(status);
+}
+/*************************************************************************
+*
+ 22388+4419 = HO 295 AB & ADS 16138 & 2004. & & & & & & & orb \\
+*************************************************************************/
+static int read_object_data(char *b_data, char *wds_name, char *official_name,
+                            char *ads_name, int *orbit, double *WR, double *WT, 
+                            double *WY, int i_notes)
+{
+char *pc, buff[60];
+int istat, status, icol, ncol;
+status = 1;
+
+/* 2009/NEW/Preliminary step: check is syntax is OK: */
+pc = b_data;
+ncol = 1;
+while(*pc) {
+ if(*pc == '&') ncol++;
+ pc++;
+ }
+if(ncol != 10) {
+  fprintf(stderr, "read_object_data/Bad syntax.\n %s\n", b_data); 
+  fprintf(stderr, "read_object_data/Fatal error ncol=%d (should be 10!)\n", 
+          ncol);
+  exit(-1); 
+  }
+
+/* First step: decodes WDS name: */
+icol = 1;
+istat = read_svalue(b_data, buff, icol); 
+
+/* Look and check whether WDS name is present */
+if(!istat && *buff) {
+pc = buff;
+buff[59]='\0';
+/* Look for the second item (official name) starting after a "=" symbol: */
+while(*pc && *pc != '=') pc++;
+  if(*pc == '=') {
+  pc++;
+  strcpy(official_name, pc);
+  status = 0;
+  }
+
+/* Look for the first item ending with a "=" symbol: */
+if(!status) {
+  pc = buff;
+  while(*pc && *pc != '=') pc++;
+    if(*pc == '=') {
+    *pc = '\0';
+    strcpy(wds_name, buff);
+    status = 0;
+    *orbit = 0;
+    }
+}
+
+/* Reads ADS name in 2nd column: */
+icol = 2;
+ads_name[0] = '\0';
+istat = read_svalue(b_data, buff, icol); 
+if(!istat){
+ pc = buff;
+ while(*pc && strncmp(pc,"ADS",3)) pc++;
+ if(!strncmp(pc,"ADS",3)){
+    pc +=3;
+    strcpy(ads_name, pc);
+    }
+ else
+   strcpy(ads_name,"\\nodata");
+ }
+
+/* Then tries to read "orb" in column notes: */
+istat = read_svalue(b_data, buff, i_notes); 
+if(!istat) { 
+   pc = buff; 
+   while(*pc && *pc != 'o') pc++;
+   if(*pc == 'o') {
+     if(!strncmp(pc,"orb",3)) *orbit = 1;
+     }
+   }
+
+/* Read WR, WT and WY values if present */
+   read_svalue(b_data, buff, i_notes);
+   *WR = -1.; *WT = -1.; *WY = -1.;
+   read_WDS_CHARA(buff, WR, WT, WY);
+
+} /* EOF !status case */
+return(status);
+}
+/*************************************************************************
+* Check whether input line is a measurement
+*
+* INPUT:
+* i_eyepiece: column nber of eyepiece focal length information
+* i_rho: column nber with rho values
+* i_drho: column nber with drho values
+* i_theta: column nber with theta values
+* i_dtheta: column nber with dtheta values
+*************************************************************************/
+static int check_measure(char *b_data, int i_eyepiece, int i_rho, int i_drho, 
+                         int i_theta, int i_dtheta)
+{
+int status;
+double ww; 
+
+status = read_fvalue(b_data, &ww, i_rho); 
+if(!status) status = read_fvalue(b_data, &ww, i_drho); 
+if(!status) status = read_fvalue(b_data, &ww, i_theta); 
+if(!status) status = read_fvalue(b_data, &ww, i_dtheta); 
+if(!status) status = read_fvalue(b_data, &ww, i_eyepiece); 
+
+return(status);
+}
+/*************************************************************************
+*
+* INPUT:
+* i_eyepiece: column nber of eyepiece focal length information
+* i_rho: column nber with rho values
+* i_drho: column nber with drho values
+* i_theta: column nber with theta values
+* i_dtheta: column nber with dtheta values
+* wds_name, official_name, ads_name : object designation in various catalogues  
+* orbit: flag, set to one if orbit is known, 0 otherwise
+*************************************************************************/
+static int calibrate_measures(OBJECT *obj, int nobj, double scale_10, 
+                              double scale_20, double theta0, double sign)
+{
+MEASURE *me;
+double scale;
+int nm;
+register int i, j;
+
+for(i = 0; i < nobj; i++) {
+  nm = (obj[i]).nmeas;
+  for(j = 0; j < nm; j++) {
+    me = &(obj[i]).measure[j];
+
+/* Scale according to eyepiece: */
+    if(me->eyepiece == 10) scale = scale_10;
+     else scale = scale_20;
+ 
+   if(me->rho != NO_DATA) { 
+    me->rho *= scale;
+    me->drho *= scale;
+    me->theta = me->theta * sign + theta0;
+    while(me->theta < 0.) me->theta += 360.;
+    while(me->theta >= 360.) me->theta -= 360.;
+    }
+   } /* EOF loop on j */
+} /* EOF loop on i */
+
+return(0);
+}
+/*************************************************************************
+*
+* INPUT:
+* i_eyepiece: column nber of eyepiece focal length information
+* i_rho: column nber with rho values
+* i_drho: column nber with drho values
+* i_theta: column nber with theta values
+* i_dtheta: column nber with dtheta values
+* wds_name, official_name, ads_name : object designation in various catalogues  
+* orbit: flag, set to one if orbit is known, 0 otherwise
+*************************************************************************/
+static int calib_data_copy(char *b_data, char *b_out, double scale_10, 
+                      double scale_20, double theta0, double sign, int i_date, 
+                      int i_eyepiece, int i_rho, int i_drho, int i_theta, 
+                      int i_dtheta)
+{
+int status, eyepiece;
+double epoch, rho, drho, theta, dtheta, scale;
+char date[30];
+
+/* By default simply copy input to output: */
+ strcpy(b_out, b_data);
+
+ status = decode_data(b_data, date, &epoch, &rho, &drho, &theta, &dtheta, 
+                      &eyepiece, i_date, i_eyepiece, i_rho, i_drho, i_theta, 
+                      i_dtheta);
+ if(status) {
+  return(1);
+  }
+
+ if(eyepiece == 10) scale = scale_10;
+ else scale = scale_20;
+
+if(rho != NO_DATA) { 
+ rho *= scale;
+ drho *= scale;
+ theta = theta * sign + theta0;
+ while(theta < 0.) theta += 360.;
+ while(theta >= 360.) theta -= 360.;
+ dtheta = dtheta;
+
+/* rho and drho with 3 decimals */
+status = write_fvalue(b_data, b_out, rho, i_rho, 3); 
+if(!status) {
+   strcpy(b_data, b_out);
+   status = write_fvalue(b_data, b_out, drho, i_drho, 3); 
+   }
+/* theta and dtheta with 1 decimal */
+if(!status) {
+   strcpy(b_data, b_out);
+   status = write_fvalue(b_data, b_out, theta, i_theta, 1); 
+   }
+if(!status) {
+   strcpy(b_data, b_out);
+   status = write_fvalue(b_data, b_out, dtheta, i_dtheta, 1); 
+   }
+} /* EOF !NO_DATA */
+
+/* epoch with 3 decimals (October 2008)*/
+if((epoch > 0) && (!status)) {
+   strcpy(b_data, b_out);
+   status = write_fvalue(b_data, b_out, epoch, i_date, 3); 
+   }
+if(status) {
+ printf("calib_data/Fatal error, updating array!\n");
+ exit(-1);
+ }
+
+return(0);
+}
+/**************************************************************************
+*
+* INPUT:
+* i_eyepiece: column nber of eyepiece focal length information
+* i_rho: column nber with rho values
+* i_drho: column nber with drho values
+* i_theta: column nber with theta values
+* i_dtheta: column nber with dtheta values
+*
+* OUTPUT:
+* rho, drho, theta, dtheta
+* eyepiece
+* epoch
+*
+**************************************************************************/
+static int add_new_measure(char *b_data, OBJECT *obj, int nobj, int i_filename, 
+                           int i_date, int i_filter, int i_eyepiece, int i_rho,
+                           int i_drho, int i_theta, int i_dtheta, int i_notes,
+                           int comments_wanted)
+{
+MEASURE *me;
+double epoch, rho, drho, theta, dtheta, ww, exact_epoch;
+char notes[80], filter[20], date[40], filename[60], *pc;
+int eyepiece, quadrant, dquadrant, status, nm;
+
+/* Return if no object has been entered yet: */
+if(nobj <= 0) return(-1);
+
+eyepiece = 0;
+quadrant = 0;
+dquadrant = 0;
+rho = NO_DATA;
+drho = NO_DATA;
+theta = NO_DATA;
+dtheta = NO_DATA;
+epoch = -1.;
+filter[0] = '\0';
+notes[0] = '\0';
+
+/* Read date and compute epoch: */
+epoch = 0.;
+status = compute_epoch_value(b_data, date, &epoch, i_date); 
+
+status = read_fvalue(b_data, &rho, i_rho); 
+if(!status) status = read_fvalue(b_data, &drho, i_drho); 
+if(!status) status = read_fvalue(b_data, &theta, i_theta); 
+if(!status) status = read_fvalue(b_data, &dtheta, i_dtheta); 
+if(!status) {
+  status = read_fvalue(b_data, &ww, i_eyepiece); 
+  eyepiece = (int)(ww+0.5);
+  }
+
+/* Read non-compulsory parameters */
+   read_svalue(b_data, filename, i_filename);
+   read_svalue(b_data, filter, i_filter);
+/* JLP2008: I change sf to W filter: */
+/* JLP 2008 I remove the first blank characters: */
+   pc = filter; 
+   while(*pc && *pc == ' ') pc++; 
+   strcpy(filter, pc);
+   if(!strncmp(filter,"sf",2)) {
+     printf("******** filter sf changed to >%s< \n",filter);
+     strcpy(filter, "W");
+     }
+   status = read_svalue(b_data, notes, i_notes);
+
+/* Check if EP= is available in the notes: */
+   read_epoch(notes, &exact_epoch, comments_wanted);
+   if(exact_epoch != -1) {
+     ww = ABS(exact_epoch - epoch);
+     if(ww > 1./365.25) {
+       printf("Fatal error/inconsistent epoch in the comments\n");
+       printf("%s \n epoch=%f exact_epoch=%f\n", b_data, epoch, exact_epoch);
+       printf(" Delta epoch : %.4f (year) or %.2f (days)\n", ww, ww*365.25);
+       exit(-1);
+       }
+     else  
+       epoch = exact_epoch;
+     }
+
+/* Read the quadrant value if present, and 
+* removes "Q=" from notes if comments_wanted == 0 */
+   read_quadrant_Q(notes, &quadrant, &dquadrant, comments_wanted);
+/* 2008: attempt with LQ if problem with Q: */
+   if(quadrant == -1 || dquadrant == 1) 
+      read_quadrant_LQ(notes, &quadrant, &dquadrant, comments_wanted);
+
+/* Store data and increase nber of measurements for this object */
+if(!status) {
+   nm = (obj[nobj-1]).nmeas;
+   me = &(obj[nobj-1]).measure[nm];
+
+   me->rho = rho; 
+/* Minimum value for rho error: 0.1 pixel or 0.5% */
+   drho = MAXI(drho, 0.1); 
+   me->drho = MAXI(drho, rho*0.005); 
+   me->theta = theta; 
+/* Minimum value for theta error: 0.3 degree */
+   me->dtheta = MAXI(dtheta, 0.3); 
+   me->eyepiece = eyepiece; 
+   me->quadrant = quadrant; 
+   me->dquadrant = dquadrant; 
+   me->epoch = epoch; 
+   me->flagged_out = 0;
+   strcpy(me->filename, filename);
+   strcpy(me->filter, filter);
+   strcpy(me->notes, notes);
+   strcpy(me->date, date);
+   ((obj[nobj-1]).nmeas)++;
+
+#ifdef DEBUG
+     printf(" nobj=%d, new measure successfully added (nm=%d)\n", nobj,
+              (obj[nobj-1]).nmeas);
+     printf(" rho=%.2f drho=%.2f theta=%.2f dtheta=%.2f eyep.=%d Q=%d dQ=%d notes=>%s<\n", 
+                   me->rho, me->drho, me->theta, me->dtheta, me->eyepiece,
+                   me->quadrant, me->dquadrant, me->notes);
+#endif
+   }
+#ifdef DEBUG
+else
+  printf("add_new_measure/Failure adding new measurement \n");
+#endif
+
+return(status);
+}
+/**************************************************************************
+* Decode line with results of measurements
+* Example:
+* & 041107\_ads15547ab\_Rd\_8\_a & 04/11/2007 & R & 20 & 11.55 & 0.37 & 49.12 
+* & 0.7 & Q=4 EP=2007.8437 \\
+*
+* INPUT:
+* i_eyepiece: column nber of eyepiece focal length information
+* i_rho: column nber with rho values
+* i_drho: column nber with drho values
+* i_theta: column nber with theta values
+* i_dtheta: column nber with dtheta values
+*
+* OUTPUT:
+* rho, drho, theta, dtheta
+* eyepiece
+* epoch
+*
+**************************************************************************/
+static int decode_data(char *b_data, char *date, double *epoch, double *rho, 
+                       double *drho, double *theta, double *dtheta, int *eyepiece,
+                       int i_date, int i_eyepiece, int i_rho, int i_drho, 
+                       int i_theta, int i_dtheta)
+{
+double ww;
+int status, ncol;
+char *pc;
+
+/* 2009/NEW/Preliminary step: check is syntax is OK: */
+pc = b_data;
+ncol = 1;
+while(*pc) {
+ if(*pc == '&') ncol++;
+ pc++;
+ }
+if(ncol != 10) {
+  fprintf(stderr, "decode_data/Bad syntax.\n %s\n", b_data); 
+  fprintf(stderr, "decode_data/Fatal error ncol=%d (should be 10!)\n", 
+          ncol);
+  exit(-1); 
+  }
+
+*eyepiece = 0;
+*rho = *drho = *theta = *dtheta = 0;
+
+/* Read date: */
+*epoch = 0.;
+status = compute_epoch_value(b_data, date, epoch, i_date); 
+
+status = read_fvalue(b_data, rho, i_rho); 
+if(!status) status = read_fvalue(b_data, drho, i_drho); 
+if(!status) status = read_fvalue(b_data, theta, i_theta); 
+if(!status) status = read_fvalue(b_data, dtheta, i_dtheta); 
+if(!status) {
+  status = read_fvalue(b_data, &ww, i_eyepiece); 
+  *eyepiece = (int)(ww+0.5);
+  }
+
+#ifdef DEBUG
+if(!status) printf(" rho=%.2f drho=%.2f theta=%.2f dtheta=%.2f eyepiece=%d\n", 
+                   *rho, *drho, *theta, *dtheta, *eyepiece);
+#endif
+
+return(status);
+}
+/**************************************************************************
+* Read decimal value in column #icol from b_data string
+*
+**************************************************************************/
+static int read_dvalue(char *b_data, int *value, int icol) 
+{
+int ival, status;
+char buff[60];
+
+*value = 0.;
+status = read_svalue(b_data, buff, icol); 
+if(!status) { 
+   ival = sscanf(buff, "%d", value);
+printf("read_dvalue/buff=>%s< value=%d ival=%d\n", buff, *value, ival);
+/*
+*/
+   if(ival <= 0) status = 1;
+  }
+
+return(status);
+}
+/**************************************************************************
+* Read double value in column #icol from b_data string
+*
+**************************************************************************/
+static int read_fvalue(char *b_data, double *value, int icol) 
+{
+int ival, status;
+char buff[60], nodata[60];
+
+*value = 0.;
+status = read_svalue(b_data, buff, icol); 
+if(!status) { 
+   sscanf(buff, "%s", nodata);
+   if(!strncmp(nodata,"\\nodata",7)) { 
+/*
+     printf("read_fvalue: nodata found! \n");
+*/
+     *value = NO_DATA;
+     }
+   else {
+   ival = sscanf(buff, "%lf", value);
+   if(ival <= 0) { 
+/*
+      printf("read_fvalue/buff=>%s< value=%.2f ival=%d\n", buff, *value, ival);
+*/
+      status = 1;
+      }
+   }
+  }
+return(status);
+}
+/**************************************************************************
+* Read epoch value from date information in column #icol from b_data string
+*
+* Input format: dd/mm/yy, e.g. 12/2/2004 or 01/12/1998 or 31/06/2002
+* Output: epoch, as a fraction of year, e.g. 2004.234
+*
+**************************************************************************/
+static int compute_epoch_value(char *b_data, char *date, double *epoch , int icol) 
+{
+int ival, status, dd, mm, iyy;
+double yy, time;
+
+/* Read date: */
+date[0] = '\0';
+status = read_svalue(b_data, date, icol); 
+
+/* Removes the blanks in "date" string: */
+sscanf(date, "%s", date);
+
+if(!status) { 
+   ival = sscanf(date, "%d/%d/%d", &dd, &mm, &iyy);
+/*
+printf("compute_epoch_value/date=>%s< dd=%d mm=%d iyy=%d ival=%d\n", 
+        date, dd, mm, iyy, ival);
+*/
+   if(ival < 3) status = 1;
+  }
+
+if(!status) { 
+/* Assume observations at 10:30 pm, local time, i.e., 20:30 (U.T) in summer */
+/* Assume observations at 9:30 pm, local time, i.e., 20:30 (U.T) in winter */
+time = 20.5;
+yy = (double)iyy;
+status = besselian_epoch(yy, mm, dd, time, epoch);
+
+/*
+printf("compute_epoch_value/ epoch=%f\n", *epoch); 
+*/
+}
+
+return(status);
+}
+/**************************************************************************
+* Read string value in column #icol from b_data string
+*
+**************************************************************************/
+static int read_svalue(char *b_data, char *value, int icol) 
+{
+int ic, status, column_is_found;
+char buff[NMAX], data[NMAX], *pc;
+
+*value = '\0';
+
+strcpy(data, b_data);
+
+pc = data;
+data[NMAX-1] = '\0';
+column_is_found = 0;
+ic = 1;
+buff[0] = '\0';
+while(*pc && strncmp(pc,"\\\\",2)) {
+  if(ic == icol) {
+    column_is_found = 1; 
+    strcpy(buff,pc);
+    break;
+    }
+  if(*pc == '&') { 
+    ic++;
+    }
+  pc++;
+  }
+*pc = '\0';
+/* Return if column not found, or empty */
+if(!buff[0]) return(-1); 
+
+/* Otherwise go on analysis: */
+status = 1;
+buff[NMAX-1] = '\0';
+pc = buff;
+while(*pc) {
+  if(*pc == '&' || !strncmp(pc,"\\\\",2)) {
+    *pc = '\0'; 
+    strcpy(value,buff);
+    if(*value) status = 0;
+    break;
+    }
+  pc++;
+  }
+
+/* Removes '\r' (Carriage Return) if present: */
+if(status == 0) {
+pc = value;
+while(*pc) {
+  if(*pc == '\r') *pc = ' ';
+  pc++;
+  }
+}
+
+return(status);
+}
+/**************************************************************************
+* Write a double value in column #icol to b_out string
+*
+* INPUT:
+* b_data: current value of the line
+* value: value to be written in b_data
+* nber_of_decimal: number of decimals for the output format
+*
+* OUTPUT:
+* b_out: updated value of the line b_data with the input value in Col.#icol
+*
+**************************************************************************/
+static int write_fvalue(char *b_data, char *b_out, double value, int icol, 
+                         int nber_of_decimals) 
+{
+int ic, column_is_found, istart, iend;
+char data[360], *pc;
+register int i;
+
+strcpy(data, b_data);
+
+pc = data;
+column_is_found = 0;
+ic = 1;
+i = 0;
+while(*pc) {
+  if(ic == icol && !column_is_found) {
+    column_is_found = 1; 
+    istart = i;
+    }
+  else if(ic == icol+1) {
+    iend = i-1;
+    break;
+    }
+  if(*pc == '&') { 
+    ic++;
+    }
+  pc++;
+  i++;
+  }
+/* Return if column not found, or empty */
+if(istart == 0 || iend == istart) return(-1); 
+
+strcpy(b_out, b_data);
+
+switch(nber_of_decimals) {
+  case 1:
+    sprintf(&b_out[istart],"%8.1f ",value);
+    break;
+  case 2:
+    sprintf(&b_out[istart],"%8.2f ",value);
+    break;
+  case 3:
+  default:
+    sprintf(&b_out[istart],"%8.3f ",value);
+    break;
+  case 4:
+    sprintf(&b_out[istart],"%9.4f ",value);
+    break;
+  }
+strcpy(&b_out[istart+9],&b_data[iend]);
+
+/*
+printf("update_value/from >%s< to >%s< (value=%.2f)\n", b_data, b_out, value);
+*/
+
+return(0);
+}
+/*********************************************************************
+* Subroutine JULIAN to compute the Julian day of an observation:
+* (from "cel_meca.c")
+*
+* The Julian day begins at Greenwich mean noon (at 12 U.T.)
+*
+* Here also the Gregorian calendar reform is taken into account.
+* Thus the day following 1582 October 4 is 1582 October 15.
+*
+* The B.C. years are counted astronomically. Thus the year
+* before the year +1 is the year 0.
+*
+* Input:
+* AA, MM, IDD, TIME : year,month, day, time of the observation
+* DJUL : Julian day
+**********************************************************************/
+int julian(double aa, int mm, int idd, double time, double *djul)
+{
+double day1, year1, date_obs, date_reform;
+long month1, ia1, ib1;
+
+  day1 = time/24. + (double)idd;
+/* First the year after the 1st March ... */
+  if(mm > 2) {
+     year1 = aa;
+     month1 = mm;
+    }
+   else {
+     year1 = aa - 1;
+     month1 = mm + 12;
+    }
+
+/* Then check if after the Gregorian reform: */
+    date_obs = aa + ((int)(275 * mm / 9)
+               - 2. * (int) ((mm + 9) / 12) + idd - 30 ) / 365.;
+    date_reform = 1582. + 289./365.;
+    if(date_obs >= date_reform) {
+         ia1 = (int) (year1 / 100.);
+         ib1 = 2 - ia1 + (int) (((double)ia1)/4.);
+       }
+    else
+         ib1 = 0;
+
+/* Now final formula: */
+      *djul = (int)(365.25 * year1) + (int)(30.6001 * (month1 + 1))
+              + day1 + 1720994.5 + ib1;
+
+return(0);
+}
+/*********************************************************************
+* Subroutine BESSELIAN to compute the Besselian epoch of an observation:
+* Besselian year is a tropical year
+* which starts when the mean sun has an ecliptic longitude of 280 degrees
+*
+* Input:
+* aa, mm, idd, time : year,month, day, time of the observation
+* b_date : Besselian epoch
+**********************************************************************/
+int besselian_epoch(double aa, int mm, int idd, double time, double *b_date)
+{
+double djul;
+
+julian(aa, mm, idd, time, &djul);
+
+*b_date = 2000. + (djul - 2451544.53)/365.242189;
+
+return(0);
+}
+/***************************************************************************
+* ra_sort_objects
+* Calling routine  int JLP_QSORT_INDX(double *array, int *index, int *nn)
+* INPUT:
+*  array[nn]: array to be sorted
+*
+* OUTPUT:
+*  array[nn]: sorted array
+*  index[nn]: array giving the index of the input array,
+*             to sort other arrays in the same way if necessary
+*             (f.i. array2[i] := array2[index[i]])
+****************************************************************************/
+static int ra_sort_objects(OBJECT *obj, int *index_obj, int nobj)
+{
+double *ra;
+int j1, j2, nswap;
+register int i;
+
+ra = (double *)malloc((nobj) * sizeof(double));
+
+for(i = 0; i < nobj; i++) ra[i] = obj[i].ra;
+
+JLP_QSORT_INDX(ra, index_obj, &nobj);
+
+/* Final check on declination criterion too: */
+nswap = 1;
+while(nswap > 0) {
+nswap = 0;
+for(i = 0; i < nobj-1; i++) {
+ j1 = index_obj[i];
+ j2 = index_obj[i+1];
+/* Swap indices if declination is not sorted out: */
+ if((obj[j1].ra == obj[j2].ra) && (obj[j1].dec > obj[j2].dec)) {
+      index_obj[i] = j2;
+      index_obj[i+1] = j1;
+      nswap++;
+#ifdef DEBUG
+      printf("ra1=%f ra2=%f dec1=%d dec2=%d\n", obj[j1].ra, obj[j2].ra, 
+              obj[j1].dec, obj[j2].dec);
+#endif
+   } 
+ } /* EOF loop on i */
+#ifdef DEBUG
+printf("Sorting declination now: nswap=%d for this iteration\n",nswap);
+#endif
+} /* EOF while loop */
+
+free(ra);
+return(0);
+}
+/****************************************************************************
+* Quicksort (Cf. "C: The complete reference", Herbert Schildt)
+*
+* INPUT:
+*  array[nn]: array to be sorted
+*
+* OUTPUT:
+*  array[nn]: sorted array
+*  index[nn]: array giving the index of the input array, 
+*             to sort other arrays in the same way if necessary
+*             (f.i. array2[i] := array2[index[i]])
+****************************************************************************/
+static int JLP_QSORT_INDX(double *array, int *index, int *nn)
+{
+register int i;
+
+/* Initialization of index array: */
+for(i = 0; i < *nn; i++) index[i] = i;
+
+if(*nn < 2) return(0);
+ qs2(array, index, 0, (*nn)-1);
+
+return(0);
+}
+/**************************************************************************
+* The Quicksort, with index array 
+***************************************************************************/
+static void qs2(double *array, int *index, int left, int right)
+{
+register int i, j;
+int iy;
+double x, y;
+
+i = left; j = right;
+/* Take the element in the middle as reference to partition the array: */
+x = array[(left+right)/2];
+
+/* Put the elements < x to the left and those > x to the right: */ 
+do {
+  while(array[i] < x && i < right) i++;
+  while(x < array[j] && j > left) j--;
+  if(i <= j) {
+/* Exchange array[i] and array[j]: */
+    y = array[i];
+    array[i] = array[j];
+    array[j] = y;
+/* Exchange index[i] and index[j]: */
+    iy = index[i];
+    index[i] = index[j];
+    index[j] = iy;
+    i++; j--;
+  }
+} while(i<=j);
+
+if(left < j) qs2(array, index, left, j);
+if(i < right) qs2(array, index, i, right);
+
+return;
+}
+/*************************************************************************
+* Compute mean values for the objects with rho < 0.3" (Merate-Paper II) 
+**************************************************************************/
+static int mean_for_paper2(OBJECT *obj, int nobj)
+{
+MEASURE *me, *me_prev;
+int rec_dir, rec_dir_prev, nm, no_data_prev, no_data;
+register int i, j;
+
+
+for(i = 0; i < nobj; i++) {
+  nm = (obj[i]).nmeas;
+  me_prev = NULL;
+  for(j = 0; j < nm; j++) {
+    me = &(obj[i]).measure[j];
+/* rec_dir = 1  if recorded file
+*          = -1 if direct file
+*          = 0 otherwise
+*/
+    if(is_record_file(me->filename) == 1)
+      rec_dir = 1;
+    else if(is_direct_file(me->filename) == 1)
+      rec_dir = -1;
+    else
+      rec_dir = 0;
+    no_data = ((me->rho == NO_DATA) || (me->theta == NO_DATA)) ? 1 : 0; 
+/* Store current parameters (they become "previous" parameters in next 
+* iteration if same object) */
+    if(me_prev == NULL) {
+      rec_dir_prev = rec_dir;
+      no_data_prev = no_data;
+      me_prev = me;
+      } else {
+/* Process measurements when two measurements refer to same epoch,
+* with direct/recorded files: */ 
+      if((me->epoch == me_prev->epoch) 
+         && (me->filter[0] == me_prev->filter[0])
+         && (me->eyepiece == me_prev->eyepiece)
+         && (rec_dir * rec_dir_prev) == -1) {
+/* If two measurements have been made: */
+        if(!no_data  && !no_data_prev) {
+/* Handle quadrant: */
+          if(me->quadrant == -1 && me_prev->quadrant == 0) me_prev->quadrant = -1; 
+          if(me->quadrant == 0 && me_prev->quadrant == -1) me->quadrant = -1; 
+          if(me->quadrant > 0 && me_prev->quadrant <= 0) {
+              me_prev->quadrant = me->quadrant; 
+              me_prev->dquadrant = me->dquadrant; 
+              }
+          if(me_prev->quadrant > 0 && me->quadrant <= 0) {
+              me->quadrant = me_prev->quadrant; 
+              me->dquadrant = me_prev->dquadrant; 
+              }
+/* Handle rho and theta: */
+          if(me->rho > 0.3) {
+/* if rec and dir_prev */
+            if(rec_dir == 1 && rec_dir_prev == -1) me->flagged_out = 1;
+/* if dir and rec_prev */
+            if(rec_dir == -1 && rec_dir_prev == 1) me_prev->flagged_out = 1;
+            }
+          else compute_mean_of_two_measures(obj, i, j-1, j);
+        } /* EOF !no_data && !no_data_prev */
+/* Special handling when NO_DATA were present for both measurements: */
+/* Removes the second measurement (NB: the 2nd is the same as the first): */
+        else if(no_data  && no_data_prev) me->flagged_out = 1;
+/* Case when only one mesurement over two files: */
+        else {
+         if(no_data) me->flagged_out = 1;
+         else if(no_data_prev) me_prev->flagged_out = 1;
+         }
+/* Second file was linked to first, I neutralize it for further inspection */
+      me_prev = NULL;
+       } /* EOF epoch == epoch_prev */
+/* Second file was not linked to first, it may be linked to next: */
+  else {
+       rec_dir_prev = rec_dir;
+       no_data_prev = no_data;
+       me_prev = me;
+       }
+     } /* EOF me_prev != NULL */
+
+/* Go to next measurement */
+  } /* EOF loop on j (measurements) */
+/* Go to next object */
+} /* EOF loop on i  (objects) */
+
+return(0);
+}
+/************************************************************************
+* Check if recorded file,
+* i.e. filename with _Br _Rr _Vr or _sfr
+*
+************************************************************************/
+static int is_record_file(char *filename)
+{
+char *pc;
+int is_record_file;
+
+is_record_file = 0;
+
+/* Check if recorded file: */
+pc = filename;
+while(*pc && strncmp(pc,"_Vr",3) && strncmp(pc,"_Rr",3)
+      && strncmp(pc,"_sfr",4) && strncmp(pc,"_Br",3)) pc++;
+if(!strncmp(pc,"_Vr",3) || !strncmp(pc,"_Rr",3)
+      || !strncmp(pc,"_sfr",4) || !strncmp(pc,"_Br",3)) is_record_file = 1; 
+
+return(is_record_file);
+}
+/************************************************************************
+* Check if direct file,
+* i.e. filename with _Bd _Rd _Vd or _sfd
+*
+************************************************************************/
+static int is_direct_file(char *filename)
+{
+char *pc;
+int is_direct_file;
+
+is_direct_file = 0;
+
+/* Check if direct file: */
+pc = filename;
+while(*pc && strncmp(pc,"_Vd",3) && strncmp(pc,"_Rd",3)
+      && strncmp(pc,"_sfd",4) && strncmp(pc,"_Bd",3)) pc++;
+if(!strncmp(pc,"_Vd",3) || !strncmp(pc,"_Rd",3)
+      || !strncmp(pc,"_sfd",4) || !strncmp(pc,"_Bd",3)) is_direct_file = 1; 
+
+return(is_direct_file);
+}
+/************************************************************************
+* Compute the mean of two measures
+* and load the result in the first measure
+*
+* io: object index in obj
+* jm1, jm2: measurement indices of the two measures in obj[io].measure
+************************************************************************/
+static int compute_mean_of_two_measures(OBJECT *obj, int io, int jm1, int jm2)
+{
+MEASURE *me1, *me2;
+double w1, w2, sum;
+int no_data1, no_data2;
+
+no_data1 = ((me1->rho == NO_DATA) || (me1->theta == NO_DATA)) ? 1 : 0; 
+no_data2 = ((me2->rho == NO_DATA) || (me2->theta == NO_DATA)) ? 1 : 0; 
+
+/* Neutralizes the measurement that lead to a non-detection
+* and only keeps the good one (or the first one if two non-detections): */
+if(no_data2) {
+me2->flagged_out = 1;
+} else if(no_data1) {
+me1->flagged_out = 1;
+} else {
+me1 = &(obj[io]).measure[jm1];
+me2 = &(obj[io]).measure[jm2];
+w1 = (me2->drho / (me1->drho + me2->drho))
+     + (me2->dtheta / (me1->dtheta + me2->dtheta));
+w2 = (me1->drho / (me1->drho + me2->drho))
+     + (me1->dtheta / (me1->dtheta + me2->dtheta));
+sum = w1 + w2;
+  if(sum == 0) {
+     printf("compute_mean_of_two_measures/Fatal: rms error is null for io=%d jm1=%d jm2=%d\n", io, jm1, jm2);
+     exit(-1);
+     }
+w1 /= sum; 
+w2 /= sum; 
+
+#ifdef DEBUG
+printf(" compute_mean_of_two_measures/WDS=%s ADS=%s NAME=%s io=%d jm1=%d jm2=%d dt1=%f dt2=%f dr1=%f dr2=%f w1=%f w2 =%f \n", 
+       (obj[io]).wds, (obj[io]).ads, (obj[io]).name, io, jm1, jm2, me1->dtheta, 
+       me2->dtheta, me1->drho, me2->drho, w1, w2);
+#endif
+
+/* Load the mean onto the first measure: */
+me1->rho = me1->rho * w1 + me2->rho * w2;
+me1->theta = me1->theta * w1 + me2->theta * w2;
+me1->drho = sqrt((SQUARE(me1->drho) * w1 + SQUARE(me2->drho) * w2));
+me1->dtheta = sqrt((SQUARE(me1->dtheta) * w1 + SQUARE(me2->dtheta) * w2));
+
+/* Flag out the second measure to prevent further use: */
+me2->flagged_out = 1;
+
+} /* EOF !no_data1 && !no_data2 */
+
+return(0);
+}
+/***************************************************************************
+* Read WDS_CHARA data from keywords (WR, WT, WY) if present in the note column
+*
+* INPUT:
+*  notes: string from notes column of input file 
+*
+* OUTPUT
+* WR, WT, WY  (-1 if absent)
+*
+***************************************************************************/
+static int read_WDS_CHARA(char *notes, double *WR, double *WT, double * WY)
+{
+char *pc;
+int status;
+status = 0;
+
+*WR=-1.;
+*WT=-1;
+*WY=-1;
+
+pc = notes;
+while(*pc && strncmp(pc,"WR=",3)) pc++;
+
+if(!strncmp(pc,"WR=",2)){
+ pc +=3;
+ sscanf(pc,"%lf",WR);
+   }
+
+pc = notes;
+while(*pc && strncmp(pc,"WY=",3)) pc++;
+
+if(!strncmp(pc,"WY=",2)){
+ pc +=3;
+ sscanf(pc,"%lf",WY);
+   }
+
+pc = notes;
+while(*pc && strncmp(pc,"WT=",3)) pc++;
+
+if(!strncmp(pc,"WT=",2)){
+ pc +=3;
+ sscanf(pc,"%lf",WT);
+   }
+
+return(status);
+}
+/***************************************************************************
+* Read the quadrant value if present, 
+* and removes "Q=*" from notes (if comments_wanted == 0) 
+*
+* INPUT:
+*  notes: string from notes column of input file 
+*
+* OUTPUT
+* quadrant: 0 if Q was not present
+*           -1 if Q=?
+*           1, 2, 3 or 4 if Q=1, Q=2, Q=3 or Q=4
+*  notes: same as input string, but without "Q=*" (if comments_wanted == 0) 
+*
+***************************************************************************/
+static int read_quadrant_Q(char *notes, int *quadrant, int *dquadrant,
+                           int comments_wanted)
+{
+char *pc, buffer[80];
+int status, k;
+status = 0;
+
+*quadrant=0;
+*dquadrant=0;
+
+pc = notes;
+k = 0;
+for(k = 0; k < 68; k++) 
+  if(strncmp(pc,"Q=",2)) {
+    buffer[k] = *pc; pc++;
+  } else {
+    break;
+  }
+
+if(!strncmp(pc,"Q=",2)){
+ pc +=2;
+ switch(*pc) {
+   case '1':
+    *quadrant=1;
+    break;
+   case '2':
+    *quadrant=2;
+    break;
+   case '3':
+    *quadrant=3;
+    break;
+   case '4':
+    *quadrant=4;
+    break;
+   case '?':
+   default:
+    *quadrant=-1;
+    break;
+   }
+/* Set quadrant indetermination by checking whether there
+* is a question marks such as Q=1?, Q=2?, Q=3? or Q=4? */
+ if(*pc) pc++;
+ if(*pc == '?') {pc++; *dquadrant = 1;}
+ else *dquadrant = 0;
+
+/* Normal syntax is f.i. "Q=4," */
+ while(*pc && k < 79) {pc++; buffer[k++] = *pc;}
+ buffer[k++] = '\0';
+
+/* Update notes, after removing quadrant indication: */
+if(!comments_wanted) strcpy(notes,buffer);
+}
+
+return(status);
+}
+/*********************************************************************
+* Nearly the same as read_quadrant_Q but with LQ keyword
+*
+*********************************************************************/
+static int read_quadrant_LQ(char *notes, int *quadrant, int *dquadrant,
+                            int comments_wanted)
+{
+char *pc, buffer[80];
+int status, k;
+status = 0;
+
+/* Compared to read_quadrant_Q,
+* read_quadrant_LQ should not initialize quadrant and dquadrant! */
+
+pc = notes;
+k = 0;
+for(k = 0; k < 68; k++) 
+  if(strncmp(pc,"LQ=",3)) {
+    buffer[k] = *pc; pc++;
+  } else {
+    break;
+  }
+
+if(!strncmp(pc,"LQ=",3)){
+ pc +=3;
+ switch(*pc) {
+   case '1':
+    *quadrant=1;
+    break;
+   case '2':
+    *quadrant=2;
+    break;
+   case '3':
+    *quadrant=3;
+    break;
+   case '4':
+    *quadrant=4;
+    break;
+   default:
+   case '?':
+    *quadrant=-1;
+    break;
+   }
+
+/* Set quadrant indetermination by checking whether there
+* is a question marks such as Q=1?, Q=2?, Q=3? or Q=4? */
+ if(*pc) pc++;
+ if(*pc == '?') {pc++; *dquadrant = 1;}
+ else *dquadrant = 0;
+
+/* Normal syntax is f.i. "LQ=4," */
+ pc++;
+ while(*pc && k < 79) {pc++; buffer[k++] = *pc;}
+ buffer[k++] = '\0';
+
+/* Update notes, after removing quadrant indication: */
+if(!comments_wanted) strcpy(notes,buffer);
+}
+
+return(status);
+}
+/*******************************************************************************
+* Check if theta value is compatible with the quadrant value
+*
+*******************************************************************************/
+static int quadrant_is_consistent(MEASURE *me)
+{
+/* tol = tolerance for accepting the quadrant (5 degrees here)
+*/
+double theta, tol = 5.;
+int quad, good_quad;
+
+quad = me->quadrant;
+theta = me->theta;
+
+switch(quad)
+  {
+   case 1:
+     if(theta > (0. - tol) && theta < (90. + tol)) good_quad = 1;
+     else good_quad = -1;
+     break;
+   case 2:
+     if(theta > (90. - tol) && theta < (180. + tol)) good_quad = 1;
+     else good_quad = -1;
+     break;
+   case 3:
+     if(theta > (180. - tol) && theta < (270. + tol)) good_quad = 1;
+     else good_quad = -1;
+     break;
+   case 4:
+     if(theta > (270. - tol) && ((theta < (360. + tol)) || (theta < tol))) 
+           good_quad = 1;
+     else good_quad = -1;
+     break;
+/* Case Q=? */
+   case -1:
+   default:
+     good_quad = 0;
+     break;
+  }
+
+return(good_quad);
+}
+/*********************************************************************
+*
+*********************************************************************/
+static int compute_statistics(FILE *fp_out, OBJECT *obj, int nobj, char *filein)
+{
+MEASURE *me;
+double delta_theta;
+int nm, nmeas, no_detected, no_data;
+int nquad, nquad_uncert, is_quad, nbad_quad;
+register int i, j;
+
+/* Compute number of measurements: */
+nmeas = 0;
+no_detected = 0;
+nquad = 0;
+nquad_uncert = 0;
+nbad_quad = 0;
+
+for(i = 0; i < nobj; i++) {
+ nm = (obj[i]).nmeas;
+   for(j = 0; j < nm; j++) {
+   me = &(obj[i]).measure[j];
+     if(!me->flagged_out) {
+     nmeas ++;
+     no_data = ((me->rho == NO_DATA) || (me->theta == NO_DATA)) ? 1 : 0; 
+     no_detected += no_data;
+     is_quad = (me->quadrant > 0) ? 1 : 0;
+     nquad += is_quad;
+     nquad_uncert += me->dquadrant;
+     if(me->theta != NO_DATA && (obj[i]).WY > 1980. && is_quad) {
+        delta_theta = ABS(me->theta - (obj[i]).WT);
+/* JLP2007: case when theta is close to 0/360 degrees: */
+        if(delta_theta > 320.) delta_theta = ABS(delta_theta - 360.);
+/* Check if difference is not too large: */
+        if(delta_theta > 90.) {
+          nbad_quad ++;
+          printf(" Wrong quadrant relative to WDS CHARA for %s (Q=%d, WT=%.1f)\n",
+                me->filename, me->quadrant, (obj[i]).WT);
+          fprintf(fp_out," Wrong quadrant relative to WDS CHARA for %s (Q=%d, WT=%.1f)\n\n",
+                me->filename, me->quadrant, (obj[i]).WT);
+          }
+       }
+     }
+   }
+ }
+
+fprintf(fp_out, " Input file: %s \n \n", filein);
+printf(" Number of objects: %d \n", nobj);
+fprintf(fp_out, " Number of objects: %d \n \n", nobj);
+
+printf(" Number of observations: %d with %d measurements and %d cases of no detection \n ", 
+        nmeas, nmeas - no_detected, no_detected);
+fprintf(fp_out, " Number of observations: %d with %d measurements and %d cases of no detection \n \n ", 
+        nmeas, nmeas - no_detected, no_detected);
+
+printf("Quadrant was determined for %d measurements (including %d uncertain determinations)\n", 
+        nquad, nquad_uncert);
+fprintf(fp_out, "Quadrant was determined for %d measurements (including %d uncertain determinations)\n \n", 
+        nquad, nquad_uncert);
+
+printf("Warning: %d quadrant values are inconsistent with CHARA theta last measurements! \n",
+         nbad_quad);
+fprintf(fp_out,"Warning: %d quadrant values are inconsistent with CHARA theta last measurements! \n \n",
+         nbad_quad);
+printf("OK: %d quadrant values are consistent with CHARA theta last measurements! \n",
+         nquad - nbad_quad);
+fprintf(fp_out,"OK: %d quadrant values are consistent with CHARA theta last measurements! \n \n",
+         nquad - nbad_quad);
+
+fprintf(fp_out, " In column 9,  $*$ indicates that $\\theta$ was determined with our quadrant value (or with the long integration)\n \n");
+fprintf(fp_out, " In column 9,  $!$ indicates that $\\theta$ could not be determined neither with this value, nor with WDS CHARA last measurement\n \n");
+
+return(0);
+}
+/******************************************************************************
+*
+* Good value if WDS_CHARA measurement is in the interval 
+*          [me->theta - 90, me->theta + 90]
+* Otherwise, correct our measurement by adding +180 degrees.
+******************************************************************************/
+static int correct_theta_with_WDS_CHARA(OBJECT *ob, MEASURE *me)
+{
+double delta_theta;
+int status;
+status = 0;
+
+if(ob->WY == -1. || ob->WT == -1. || me->theta == NO_DATA) {
+   status = -1;
+  }
+else {
+  delta_theta = ABS(me->theta - ob->WT);
+  if(delta_theta > 90.) {
+    me->theta += 180.;
+    if(me->theta > 360.) me->theta -= 360.;
+    }
+  }
+return(status);
+}
+/***************************************************************************
+* Read the epoch value if present, 
+* and removes "EP=*" from notes (if comments_wanted == 0) 
+*
+* INPUT:
+*  notes: string from notes column of input file 
+*
+* OUTPUT
+* epoch: -1 if EP was not present
+*  notes: same as input string, but without "EP=*" (if comments_wanted == 0)
+*
+***************************************************************************/
+static int read_epoch(char *notes, double *epoch, int comments_wanted)
+{
+char *pc, buffer[80];
+int status, k;
+status = 0;
+
+*epoch=-1.;
+
+pc = notes;
+k = 0;
+while(*pc && strncmp(pc,"EP=",3)) {buffer[k++] = *pc; pc++;}
+
+/* Syntax is EP=2005.234 */
+if(!strncmp(pc,"EP=",3)){
+ pc +=3;
+ sscanf(pc,"%lf", epoch);
+
+/* Normal syntax is f.i. "EP=2005.234 " */
+
+/* Look for blank or end of notes: */
+ while(*pc && *pc != ',' && *pc != ' ') pc++;
+
+/* Copy end of notes: */
+ while(*pc && k < 79) {pc++; buffer[k++] = *pc;}
+ buffer[k++] = '\0';
+
+/* Update notes, after removing epoch data: */
+if(!comments_wanted) strcpy(notes,buffer);
+}
+
+return(status);
+}
+/*************************************************************************
+* Conversion of WDS name for Latex output, so that
+* WDS names with negative declination will be aligned with positive ones 
+*
+* INPUT:
+* obj_wds: e.g., 17304-0104
+*
+* OUTPUT:
+* wds_name: e.g., 17304$-$0104
+*
+*************************************************************************/
+static int preformat_wds_name(char *obj_wds, char *wds_name)
+{
+char *pc;
+int k;
+
+pc = obj_wds;
+k = 0;
+while(*pc && *pc != '-' && k < 40) wds_name[k++] = *pc++;
+if(*pc == '-') {
+  strcpy(&wds_name[k], "$-$");
+  k += 3;
+  pc++;
+  while(*pc) wds_name[k++] = *pc++;
+ }
+wds_name[k] = '\0';
+
+#ifdef DEBUGG
+printf("preformat_wds_name/input=%s output=%s\n", obj_wds, wds_name);
+#endif
+
+return(0);
+}
+/*********************************************************************
+* Check if current line is compatible with the syntax of a new object
+* Example:
+* 16564+6502 = STF 2118 AB & ADS 10279 & 2004. & & & & & & & orb \\
+*
+*********************************************************************/
+static int check_if_object_name(char *b_in, int *contains_object_name)
+{
+int ncol;
+char *pc;
+
+*contains_object_name = 0;
+
+/* If comment, exit from here: */
+if(b_in[0] == '%' || b_in[1] == '%') return(0);
+
+/* First check that there are 10 columns: */
+pc = b_in;
+ncol = 1;
+while(*pc) {
+  if(*pc == '&') ncol++;
+  pc++;
+ }
+if(ncol != 10) return(0);
+
+/* Then check that there is a "+" or "-" (WDS name)
+* or  a "=" in the first column: */
+pc = b_in;
+ncol = 1;
+while(*pc) {
+  if(ncol == 1 && (*pc == '+' || *pc == '-' || *pc == '=')) {
+    *contains_object_name = 1;
+    break;
+    }
+  if(*pc == '&') {ncol++; break;}
+  pc++;
+ }
+ 
+return(0);
+}

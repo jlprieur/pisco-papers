@@ -1,0 +1,144 @@
+##############################################################################
+# Makefile for astrom and orbit source code 
+# Uses jlp_make.mk
+#
+# JLP
+# Version 02/07/2018
+##############################################################################
+
+##############################################
+mylib=$(JLPLIB)/jlp
+CPP = c++
+JLIB=$(mylib)/newplot0.a $(mylib)/jlp_wxplot.a $(mylib)/jlp_splot.a \
+        $(mylib)/jlp_splot_idv.a $(mylib)/jlp_splot.a \
+        $(mylib)/jlpacc.a $(mylib)/jlp_numeric.a \
+	$(mylib)/jlp_fits.a
+
+CATALOG_OBJ=$(PSCPLIB)/jlp_catalog_utils.o $(PSCPLIB)/PISCO_catalog_utils.o \
+	$(PSCPLIB)/WDS_catalog_utils.o \
+	$(PSCPLIB)/OC6_catalog_utils.o $(PSCPLIB)/HIP_catalog_utils.o \
+	$(PSCPLIB)/residuals_utils.o
+DEP_CATALOG=$(PSCPLIB)/jlp_catalog_utils.h $(PSCPLIB)/jlp_catalog_utils.c \
+	$(PSCPLIB)/PISCO_catalog_utils.c $(PSCPLIB)/PISCO_catalog_utils.h  \
+	$(PSCPLIB)/WDS_catalog_utils.h \
+	$(PSCPLIB)/OC6_catalog_utils.c $(PSCPLIB)/OC6_catalog_utils.h \
+	$(PSCPLIB)/HIP_catalog_utils.h $(PSCPLIB)/residuals_utils.h 
+
+ASTROM_OBJ=$(PSCPLIB)/astrom_utils1.o $(PSCPLIB)/astrom_utils_pdb.o \
+	$(PSCPLIB)/astrom_utils2.o 
+ASTROM_SRC=$(ASTROM_OBJ:.o=.c)
+DEP_ASTROM_=$(PSCPLIB)/astrom_utils1.h $(PSCPLIB)/astrom_utils2.h \
+	$(DEP_ASTROM_SRC) 
+
+MYPLOT_OBJ=$(PSCPLIB)/orbit_plot_utils.o $(PSCPLIB)/orbit_plot_xy.o
+MYPLOT_SRC=$(MYPLOT_OBJ:.o=.c)
+DEP_MYPLOT=$(PSCPLIB)/orbit_plot_utils.h  $(MYPLOT_SRC)
+
+WX_LIB := `wx-config --libs base,core`
+CFLAGS = -g -I. -I../jlplib/jlp_fits -I../jlplib/jlp_numeric \
+	-I../jlplib/cfitsio/incl -I../jlplib/jlp_splot_idv \
+	-I../jlplib/jlp_splot
+
+.SUFFIXES:
+.SUFFIXES:  .o .c.cpp .for .exe $(SUFFIXES) 
+
+.cpp.exe:
+	$(CPP) -c $(CFLAGS) $*.cpp
+	$(CPP) $(CFLAGS) -o $(EXEC)/$*.exe $*.o $(CATALOG_OBJ) \
+	$(ASTROM_OBJ) \
+	$(MATHLIB) $(JLIB) $(FITSLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
+# $(JLIB) $(MATHLIB) $(FITSLIB) $(XLIB) $(LIBC) -lm
+	rm $*.o
+
+.c.exe:
+	$(CC) -c $(CFLAGS) $*.c
+	$(CC) $(CFLAGS) -o $(EXEC)/$*.exe $*.o $(CATALOG_OBJ) \
+	$(MATHLIB) $(JLIB) $(FITSLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
+# $(JLIB) $(MATHLIB) $(FITSLIB) $(XLIB) $(LIBC) -lm
+	rm $*.o
+
+.for.exe:
+#	$(EXEC)/esoext1.exe -I ../jlpsub -f $*.for
+	$(F77) -c $(FFLAGS) $*.for
+	$(F77) $(FFLAGS) -o $(EXEC)/$*.exe $*.o \
+	$(MATHLIB) $(JLIB) $(FITSLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
+# $(JLIB) $(MATHLIB) $(FITSLIB) $(XLIB) $(LIBC) -lm
+	rm $*.o
+
+#.o.exe:
+#	$(F77) $(FFLAGS) -o $(EXEC)/$*.exe $*.o \
+#	$(JLIB) $(MATHLIB) $(FITSLIB) $(XLIB) $(LIBC) -lm
+#	rm $*.o
+
+all: 
+	cd pscplib; make -f Makefile_pscplib; cd ..
+
+process_gili_table.exe : process_gili_table.c $(DEP_ASTROM) $(DEP_CATALOG) $(CATALOG_OBJ) $(ASTROM_OBJ)
+	$(CC) -c $(CFLAGS) $*.c
+	$(CC) $(CFLAGS) -o $(EXEC)/$*.exe $*.o $(ASTROM_OBJ) \
+	$(CATALOG_OBJ) $(MATHLIB) $(JLIB) $(FITSLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
+
+orbit_plot1.exe : orbit_plot1.c $(DEP_MYPLOT) $(DEP_CATALOG) $(CATALOG_OBJ) $(MYPLOT_OBJ) 
+	$(CC) -c $(CFLAGS) $*.c
+	$(CC) $(CFLAGS) -o $(EXEC)/$*.exe $*.o $(MYPLOT_OBJ) \
+	$(CATALOG_OBJ) $(JLIB) $(FITSLIB) $(MATHLIB) \
+	$(XLIB) $(WX_LIB) $(F77LIB) -lm
+
+orbit_plot2.exe : orbit_plot2.c $(CATALOG_OBJ) 
+	$(CC) -c $(CFLAGS) $*.c
+	$(CC) $(CFLAGS) -o $(EXEC)/$*.exe $*.o \
+	$(CATALOG_OBJ) $(JLIB) $(FITSLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(F77LIB) -lm
+
+astrom_calib_gili.exe : astrom_calib_gili.c $(DEP_ASTROM) $(ASTROM_OBJ) $(DEP_CATALOG) $(CATALOG_OBJ)
+	$(CC) -c $(CFLAGS) $*.c
+	$(CC) $(CFLAGS) -o $(EXEC)/$*.exe $*.o $(ASTROM_OBJ) \
+	$(CATALOG_OBJ) $(MATHLIB) $(JLIB) $(FITSLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
+
+astrom_calib_calern.exe : astrom_calib_calern.c $(DEP_ASTROM) $(ASTROM_OBJ) $(DEP_CATALOG) $(CATALOG_OBJ)
+	$(CC) -c $(CFLAGS) $*.c
+	$(CC) $(CFLAGS) -o $(EXEC)/$*.exe $*.o $(ASTROM_OBJ) \
+	$(CATALOG_OBJ) $(MATHLIB) $(JLIB) $(FITSLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
+
+astrom_calib.exe : astrom_calib.c $(DEP_ASTROM) $(ASTROM_OBJ) $(DEP_CATALOG) $(CATALOG_OBJ)
+	$(CC) -c $(CFLAGS) $*.c
+	$(CC) $(CFLAGS) -o $(EXEC)/$*.exe $*.o $(ASTROM_OBJ) \
+	$(CATALOG_OBJ) $(MATHLIB) $(JLIB) $(FITSLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
+
+astrom_add_WDS_pdb.exe : astrom_add_WDS_pdb.c $(DEP_ASTROM) $(DEP_CATALOG) $(CATALOG_OBJ)
+	$(CC) -c $(CFLAGS) $*.c
+	$(CC) $(CFLAGS) -o $(EXEC)/$*.exe $*.o $(ASTROM_OBJ) \
+	$(CATALOG_OBJ) $(MATHLIB) $(JLIB) $(FITSLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
+
+astrom_add_WDS.exe : astrom_add_WDS.c $(DEP_ASTROM) $(DEP_CATALOG) $(CATALOG_OBJ)
+	$(CC) -c $(CFLAGS) $*.c
+	$(CC) $(CFLAGS) -o $(EXEC)/$*.exe $*.o $(ASTROM_OBJ) \
+	$(CATALOG_OBJ) $(MATHLIB) $(JLIB) $(FITSLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
+
+astrom_add_epoch.exe : astrom_add_epoch.c $(DEP_ASTROM) $(DEP_CATALOG) $(CATALOG_OBJ)
+	$(CC) -c $(CFLAGS) $*.c
+	$(CC) $(CFLAGS) -o $(EXEC)/$*.exe $*.o $(ASTROM_OBJ) \
+	$(CATALOG_OBJ) $(MATHLIB) $(JLIB) $(FITSLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
+
+HR_astrom_calib.exe : HR_astrom_calib.c $(CATALOG_OBJ) $(DEP_ASTROM)
+	$(CC) -c $(CFLAGS) $*.c
+	$(CC) $(CFLAGS) -o $(EXEC)/$*.exe $*.o $(ASTROM_OBJ) \
+	$(CATALOG_OBJ) $(MATHLIB) $(JLIB) $(FITSLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
+
+residuals_2.exe : residuals_2.c $(DEP_CATALOG)
+
+residuals_1.exe : residuals_1.c $(DEP_CATALOG) 
+
+mass_and_semiaxis.exe : mass_and_semiaxis.c $(DEP_CATALOG)
+
+list_from_OC6.exe : list_from_OC6.c $(DEP_CATALOG)
+
+update_PISCO_catalog.exe : update_PISCO_catalog.c $(DEP_CATALOG) 
+
+HR_PISCO_catalog.exe : HR_PISCO_catalog.c $(DEP_CATALOG)
+
+HR_calib_table.exe : HR_calib_table.c $(DEP_CATALOG) 
+
+merge_calib_resid.exe : merge_calib_resid.c $(DEP_CATALOG) 
+
+clean :
+	rm -f *.o 

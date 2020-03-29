@@ -1,0 +1,506 @@
+/************************************************************************
+* "WDS_catalog_utils.c"
+* To retrieve data from the WDS catalog
+*
+* JLP 
+* Version 20/11/2009
+*************************************************************************/
+#include <stdio.h>
+#include <stdlib.h>                /* exit() */
+#include <string.h>
+#include <ctype.h>                 /* isprint... */
+#include <math.h>
+#include <time.h>                  /* date */
+#include "jlp_catalog_utils.h"     // Routines used to read catalogs:
+
+#include "WDS_catalog_utils.h"     /* Prototypes of the routines defined here */ 
+#include "HIP_catalog_utils.h"     
+#include "jlp_string.h"
+
+#define ABS(a) ((a) < 0.0  ? (-(a)) : (a))
+#ifndef PI
+#define PI 3.14159265
+#endif
+#define DEGTORAD   (PI/180.00)
+
+
+/*
+#define DEBUG
+#define DEBUG_1
+*/
+
+/* Defined here:
+int search_discov_name_in_WDS_catalog(char *WDS_catalog, char *discov_name,
+                                      char *wds_name, int *found);
+int get_data_from_WDS_catalog(char *WDS_catalog, char *discov_name,
+                              char *wds_name, double *WdsLastYear, 
+                              double *WdsLastRho, double *WdsLastTheta, 
+                              double *WdsMagA, double *WdsMagB,
+                              char *WdsSpectralType,
+                              int *has_an_orbit, int *found);
+int read_coordinates_from_WDS_catalog(char *wds_name, char *WDS_catalog, 
+                                      double *alpha, double *delta,
+                                      double *equinox, int *found);
+*/
+
+/*************************************************************************
+* Format of WDS catalog (version of 2009-2012):
+*
+  COLUMN     Format                     DATA
+  --------   ------         ----------------------------
+  1  -  10   A10             2000 Coordinates
+  11 -  17   A7              Discoverer & Number
+  18 -  22   A5              Components
+  24 -  27   I4              Date (first)
+  29 -  32   I4              Date (last)
+  34 -  37   I4              Number of Observations (up to 9999)
+  39 -  41   I3              Position Angle (first - XXX)
+  43 -  45   I3              Position Angle (last  - XXX)
+  47 -  51   F5.1            Separation (first)
+  53 -  57   F5.1            Separation (last)
+  59 -  63   F5.2            Magnitude of First Component
+  65 -  69   F5.2            Magnitude of Second Component
+  71 -  79   A9              Spectral Type (Primary/Secondary)
+  81 -  84   I4              Primary Proper Motion (RA)
+  85 -  88   I4              Primary Proper Motion (Dec)
+  90 -  93   I4              Secondary Proper Motion (RA)
+  94 -  97   I4              Secondary Proper Motion (Dec)
+  99 - 106   A8              Durchmusterung Number
+ 108 - 111   A4              Notes
+ 113 - 130   A18             2000 arcsecond coordinates
+*
+* INPUT:
+*  WDS_catalog: name of the WDS catalog
+*  discov_name: discoverer's name of the object to be searched for
+*
+* OUTPUT:
+*  wds_name: WDS name corresponding to discov_name
+*  found: 1 is object was found, 0 otherwise
+*************************************************************************/
+int search_discov_name_in_WDS_catalog(char *WDS_catalog, char *discov_name,
+                                      char *wds_name, int *found)
+{
+FILE *fp_WDS_cat;
+char cat_line0[256], discov_name0[20], comp_name0[20], wds_name0[20];
+int iline;
+
+/* Removes all the blanks since 7 characters for WDS, and 8 characters 
+* for Marco's file */
+jlp_compact_string(discov_name, 20);
+
+/* Open input file containing the WDS catalog */
+if((fp_WDS_cat = fopen(WDS_catalog, "r")) == NULL) {
+   fprintf(stderr, "search_discov_name_in_WDS_catalog/Fatal error opening WDS catalog: %s\n",
+           WDS_catalog);
+   return(-1);
+  }
+
+/* Look for the data concerning this object: */
+*found = 0;
+iline = 0;
+while(!feof(fp_WDS_cat)) {
+ if(fgets(cat_line0, 256, fp_WDS_cat)) {
+   iline++;
+   if(cat_line0[0] != '%') {
+/*   
+  1  -  10   A10             2000 Coordinates
+  11 -  17   A7              Discoverer & Number
+  18 -  22   A5              Components
+*/
+   strncpy(wds_name0, &cat_line0[0], 10);
+   wds_name0[10] = '\0';
+/* 7 characters for WDS, 8 characters for Marco's file */
+   strncpy(discov_name0, &cat_line0[10], 7);
+   discov_name0[7] = '\0';
+   strncpy(comp_name0, &cat_line0[17], 5);
+   comp_name0[5] = '\0';
+
+/* Removes all the blanks since 7 characters for WDS, and 8 characters 
+* for Marco's file */
+   jlp_compact_string(discov_name0, 20);
+   if(!strcmp(discov_name, discov_name0)) {
+#ifdef DEBUG_1
+     printf("Object found in WDS catalog (discov_name =%s)\n", discov_name);
+     printf(" WDS=%s discov=%s comp=%s\n", wds_name0, discov_name0, comp_name0);
+#endif
+     strcpy(wds_name, wds_name0);
+     *found = 1;
+     break;
+     }
+   } /* EOF cat_line[0] != '%' */
+  } /* EOF fgets... */
+} /* EOF while */
+
+fclose(fp_WDS_cat);
+return(0);
+}
+/***********************************************************************
+* Get miscellaneous data from the WDS catalog
+*
+* INPUT:
+*  WDS_catalog: name of the WDS catalog
+*  discov_name1: discoverer's name of the object to be searched for
+*
+* OUTPUT:
+*  wds_name: WDS name corresponding to discov_name
+*  WdsLastYear, WdsLastRho, WdsLastTheta: year, rho, theta of the last 
+*           observation reported in the WDS
+*  WdsMagA, WdsMagB : magnitude of primary and secondary components
+*  WdsSpectralType : spectral type of A and B (when known)
+*  has_an_orbit: 1 if it has an orbit, 0 otherwise
+*  found: 1 is object was found, 0 otherwise
+***********************************************************************/
+int get_data_from_WDS_catalog(char *WDS_catalog, char *discov_name1,
+                              char *wds_name, double *WdsLastYear, 
+                              double *WdsLastRho, double *WdsLastTheta, 
+                              double *WdsMagA, double *WdsMagB,
+                              char *WdsSpectralType,
+                              int *has_an_orbit, int *found)
+{
+FILE *fp_WDS_cat;
+char cat_line0[256], discov_name0[20], comp_name0[20], wds_name0[20];
+char cvalue[64], notes0[64], orbit0, *pc, discov_name[64];
+double dvalue;
+int iline, ivalue;
+
+// Copy input discov_name (to allow further processing)
+strcpy(discov_name, discov_name1);
+
+*WdsLastYear = 0.;
+*WdsLastRho = 0.;
+*WdsLastTheta = 0.;
+*WdsMagA = 0.;
+*WdsMagB = 0.;
+WdsSpectralType[0] = '\0';
+*has_an_orbit = 0;
+wds_name[0] = '\0';
+
+/* Removes all the blanks since 7 characters for WDS, and 8 characters 
+* for Marco's file */
+jlp_compact_string(discov_name, 20);
+
+/* Open input file containing the WDS catalog */
+if((fp_WDS_cat = fopen(WDS_catalog, "r")) == NULL) {
+   fprintf(stderr, "get_data_from_WDS_catalog/Fatal error opening WDS catalog: %s\n",
+           WDS_catalog);
+   return(-1);
+  }
+
+/* Look for the data concerning this object: */
+*found = 0;
+iline = 0;
+while(!feof(fp_WDS_cat)) {
+ if(fgets(cat_line0, 256, fp_WDS_cat)) {
+   iline++;
+   if(cat_line0[0] != '%') {
+/*   
+  1  -  10   A10             2000 Coordinates
+  11 -  17   A7              Discoverer & Number
+  18 -  22   A5              Components
+  59 -  63   F5.2            Magnitude of First Component
+  65 -  69   F5.2            Magnitude of Second Component
+  71 -  79   A9              Spectral Type (Primary/Secondary)
+  108 - 111  A4              Notes
+*/
+//** 1. WDS name: "1  -  10   A10"
+   strncpy(wds_name0, &cat_line0[0], 10);
+   wds_name0[10] = '\0';
+//** 2. Discoverer & Number: "11 -  17   A7" 
+// 7 characters for WDS, 8 characters for Marco's file
+   strncpy(discov_name0, &cat_line0[10], 7);
+   discov_name0[7] = '\0';
+//** 3. Components: "18 -  22   A5" 
+   strncpy(comp_name0, &cat_line0[17], 5);
+   comp_name0[5] = '\0';
+//** 4. Magnitude of First Component: "59 -  63   F5.2" 
+   strncpy(cvalue, &cat_line0[58], 5);
+   ivalue = sscanf(cvalue, "%lf", &dvalue);
+   if(ivalue == 1) *WdsMagA = dvalue;
+//** 5. Magnitude of Second Component: "65 -  69   F5.2" 
+   strncpy(cvalue, &cat_line0[64], 5);
+   ivalue = sscanf(cvalue, "%lf", &dvalue);
+   if(ivalue == 1) *WdsMagB = dvalue;
+//** 6. Spectral Type (Primary/Secondary): "71 -  79   A9" 
+   strncpy(WdsSpectralType, &cat_line0[70], 9);
+   WdsSpectralType[9] = '\0';
+//** 7. Orbit
+// O: Orbit. A published orbit exists
+// Orbit, briefly described in WDSNOT MEMO and has entry in Orbit Catalog
+   strncpy(notes0, &cat_line0[107], 4);
+   notes0[4] = '\0';
+   pc = strchr(notes0, 'O');
+   if(pc != NULL) orbit0 = 1;
+   else orbit0 = 0;
+
+/* Removes all the blanks since 7 characters for WDS, and 8 characters 
+* for Marco's file */
+   jlp_compact_string(discov_name0, 20);
+   if(!strcmp(discov_name, discov_name0)) {
+#ifdef DEBUG_1
+     printf("Object found in WDS catalog (discov_name =%s)\n", discov_name);
+     printf("WDS=%s discov=%s comp=%s\n", wds_name0, discov_name0, comp_name0);
+     printf("WDS_cat/notes0=%s pc=%s orbit=%d\n", notes0, pc, orbit0);
+#endif
+     strcpy(wds_name, wds_name0);
+     *has_an_orbit = orbit0;
+/* Read WdsLastYear, WdsLastRho, WdsLastTheta: 
+  24 -  27   I4              Date (first)
+  29 -  32   I4              Date (last)
+  34 -  37   I4              Number of Observations (up to 9999)
+  39 -  41   I3              Position Angle (first - XXX)
+  43 -  45   I3              Position Angle (last  - XXX)
+  47 -  51   F5.1            Separation (first)
+  53 -  57   F5.1            Separation (last)
+*/
+/* (last) year */
+     strncpy(cvalue, &cat_line0[28], 4);
+     cvalue[4] = '\0';
+     if(sscanf(cvalue, "%d", &ivalue) == 1) *WdsLastYear = ivalue;
+
+/* (last) theta */
+     strncpy(cvalue, &cat_line0[42], 3);
+     cvalue[3] = '\0';
+     if(sscanf(cvalue, "%d", &ivalue) == 1) *WdsLastTheta = ivalue;
+
+/* (last) rho */
+     strncpy(cvalue, &cat_line0[52], 5);
+     cvalue[5] = '\0';
+     if(sscanf(cvalue, "%lf", &dvalue) == 1) *WdsLastRho = dvalue;
+
+     *found = 1;
+     break;
+     }
+   } /* EOF cat_line[0] != '%' */
+  } /* EOF fgets... */
+} /* EOF while */
+
+fclose(fp_WDS_cat);
+return(0);
+}
+/***********************************************************************
+* Look for accurate coordinates in WDS catalog
+*
+Columns   1- 10:    The  hours, minutes, and tenths of minutes of Right 
+                    Ascension for 2000, followed by the degrees and minutes of
+                    Declination for 2000, with + and - indicating north and
+                    south declinations. The positions given represent our best
+                    estimates of these values. Where possible, these are based
+                    on the ACRS and PPM data, with proper motion incorporated.
+
+Columns 113-130:    The hours, minutes, seconds and tenths of seconds (when
+                    known) of Right Ascension for 2000, followed by the degrees,
+                    minutes, and seconds of Declination for 2000, with + and - 
+                    indicating north and south declinations. The positions given
+                    represent our best estimates of these values. Where 
+                    possible, these are based on the Hipparcos and Tycho data, 
+                    with proper motion incorporated. While the arcminute 
+                    coordinate (columns 1-10) refer to the primary of a multiple
+                    system, the arcsecond coordinate (columns 113-130) refer to
+                    the primary of the subsystem. For example, while the BC pair
+                    of an A-BC multiple will have the same 10 digit WDS 
+                    coordinate, the arcsecond coordinate of the BC pair will be
+                    at the "B" position.
+* Example:
+06019+6052         in 1-10
+060156.93+605244.8 in 113-130
+*
+* INPUT:
+*  wds_name: WDS name of the object 
+*  WDS_catalog: name of the WDS catalog
+*
+* OUTPUT:
+* alpha, delta, equinox: coordinates of the object
+*            (alpha in hours and delta in degrees)
+************************************************************************/
+int read_coordinates_from_WDS_catalog(char *wds_name, char *WDS_catalog, 
+                                      double *alpha, double *delta,
+                                      double *equinox, int *found)
+{
+FILE *fp_WDS_cat;
+char cat_line0[256], wds_name0[40], cvalue[64], sign[1];
+int iline, hh, hm, hs, hss, dd, dm, ds, dss;
+
+*alpha = 0.;
+*delta = 0.;
+*equinox = 2000.;
+
+/* Removes all the blanks since 10 characters for WDS */ 
+jlp_compact_string(wds_name, 40);
+
+/* Open input file containing the WDS catalog */
+if((fp_WDS_cat = fopen(WDS_catalog, "r")) == NULL) {
+   fprintf(stderr, "read_coordinates_in_WDS_catalog/Fatal error opening WDS catalog: %s\n",
+           WDS_catalog);
+   return(-1);
+  }
+
+/* Look for the data concerning this object: */
+*found = 0;
+iline = 0;
+while(!feof(fp_WDS_cat)) {
+ if(fgets(cat_line0, 256, fp_WDS_cat)) {
+   iline++;
+   if(cat_line0[0] != '%') {
+/*   
+  1  -  10   A10             2000 Coordinates (= WDS name)
+  11 -  17   A7              Discoverer & Number
+  18 -  22   A5              Components
+*/
+   strncpy(wds_name0, &cat_line0[0], 10);
+   wds_name0[10] = '\0';
+
+   if(!strcmp(wds_name, wds_name0)) {
+     *found = 1;
+#ifdef DEBUG
+     printf("Object found in WDS catalog (wds_name =%s)\n", wds_name);
+#endif
+
+/* Read WdsLastYear, WdsLastRho, WdsLastTheta: 
+  113 - 130   A18            2000 precise coordinates
+Example:
+060156.93+605244.8 in 113-130
+*/
+/* (last) year */
+     strncpy(cvalue, &cat_line0[112], 18);
+     cvalue[18] = '\0';
+     if(sscanf(cvalue, "%02d%02d%02d.%02d%c%02d%02d%02d.%d", 
+        &hh, &hm, &hs, &hss, sign, &dd, &dm, &ds, &dss) == 9) {
+        *alpha = (double)hh + ((double)hm)/60. 
+                + ((double)hs + (double)hss/10.)/3600.;
+        *delta = (double)dd + ((double)dm)/60. 
+                + ((double)ds + (double)dss/10.)/3600.;
+        if(sign[0] == '-') *delta *= -1.;
+        else if(sign[0] != '+') {
+           fprintf(stderr,"read_coordinates/Fatal error: sign=%s\n", sign);
+           exit(-1);
+           }
+#ifdef DEBUG_1
+     printf("WDS%s : %02d%02d%02d.%02d%s%02d%02d%02d.%d\n",
+            wds_name, hh, hm, hs, hss, sign, dd, dm, ds, dss); 
+     printf("WDS%s : alpha=%f delta=%f \n", wds_name, *alpha, *delta);
+#endif
+     } else {
+       fprintf(stderr,"read_coordinates_from_WDS_catalog/Error in catalog\n");
+       fprintf(stderr,"Warning: error reading coordinates: >%s< of WDS%s in line%d\n",
+               cvalue, wds_name, iline);
+     } 
+
+     *found = 1;
+     break;
+     }
+   } /* EOF cat_line[0] != '%' */
+  } /* EOF fgets... */
+} /* EOF while */
+
+fclose(fp_WDS_cat);
+return(0);
+}
+/***********************************************************************
+* Get miscellaneous data from the WDS catalog
+*
+* INPUT:
+*  WDS_catalog: name of the WDS catalog
+*  discov_name: discoverer's name of the object to be searched for
+*
+* OUTPUT:
+*  wds_name: WDS name corresponding to discov_name
+*  V_mag, B_V_index : magnitude and color index  from Hipparcos
+*  paral, err_paral : parallax and error from Hipparcos
+*  magV_A, magV_B : magnitude of primary and secondary components from WDS 
+*  spectral_type : spectral types of primary and secondary components from WDS 
+*  found_in_WDS: 1 is object was found in WDS, 0 otherwise
+***********************************************************************/
+int get_data_from_WDS_and_HIP_catalogs(char *WDS_catalog, 
+                                       char *HIC_catalog, char *HIP_catalog, 
+                                       char *discov_name, char *wds_name, 
+                                       double *V_mag, double *B_V_index,
+                                       double *paral, double *err_paral,
+                                       double *magV_A, double *magV_B,
+                                       char *spectral_type, int *found_in_WDS,
+                                       int *found_in_Hip_cat)
+{
+char WDS_name[40], HIP_name[40], CCDM_name[40];
+char *pc, buffer[128];
+double alpha_wds, delta_wds, equinox_wds, D_tolerance;
+double WdsLastYear, WdsLastRho, WdsLastTheta;
+int found, is_OK, has_an_orbit, status;
+
+wds_name[0] = '\0';
+spectral_type[0] = '\0';
+*V_mag = 100.;
+*B_V_index = 100.;
+*paral = -1.;
+*err_paral = 0.;
+*magV_A = 100.;
+*magV_B = 100.;
+*found_in_WDS = 0;
+*found_in_Hip_cat = 0;
+
+/* Search for WDS number in WDS catalog using discov_name */
+get_data_from_WDS_catalog(WDS_catalog, discov_name, wds_name, &WdsLastYear,
+                          &WdsLastRho, &WdsLastTheta, magV_A, magV_B,
+                          spectral_type, &has_an_orbit, 
+                          found_in_WDS);
+
+if(*found_in_WDS != 0) {
+ read_coordinates_from_WDS_catalog(wds_name, WDS_catalog, &alpha_wds, 
+                                   &delta_wds, &equinox_wds, &found);
+ if(found != 1) {
+   fprintf(stderr, "get_data_from_WDS_and_HIP_catalogs/Error: corrds. of %s not found\n",
+          wds_name);
+   exit(-1);
+   }
+
+#ifdef DEBUG
+printf("get_data_from_WDS_and_HIP_catalogs/discov_name=%s wds_name=%s alpha_wds=%f delta_wds=%f equinox_wds=%f\n",
+       discov_name, wds_name, alpha_wds, delta_wds, equinox_wds);
+#endif
+
+/* Search for WDS number in HIPHIP//HDS/WDS cross-file
+* (only for debugging, since there are very few objects in this list)
+* NO longer used !
+  HIP_name_from_HIP_HDS_WDS_cross(wds_name, HIP_HDS_WDS_cross, HIP_name_cross,
+                                  &found_in_cross);
+*/
+
+/* Now only look for HIP object close to WDS coordinates
+*/
+/* Tolerance of the coordinates in degrees
+* used for searching for Hipparcos names.
+* 3 arcminutes is a good value with the coordinates 
+* derived from the WDS names (hour-min+/-deg-min) */
+// eg: 22070+3605 22 h 07 min, 36 deg 05 arcmin
+     D_tolerance = 3./60.;
+
+/* DEBUG: search in Hipparcos catalog */
+    search_object_in_HIC_catalog(HIC_catalog, alpha_wds, delta_wds,
+                                 equinox_wds, HIP_name, CCDM_name,
+                                 V_mag, B_V_index, D_tolerance,
+                                 found_in_Hip_cat);
+    if(*found_in_Hip_cat) {
+#ifdef DEBUG
+    printf("%s=%s was found in Hipparcos catalog (=HIP%s=CCDM%s)\n",
+            discov_name, wds_name, HIP_name, CCDM_name);
+    printf("V=%.3f B-V=%.3f\n", *V_mag, *B_V_index);
+#endif
+    read_data_in_HIP_catalog(HIP_catalog, HIP_name, paral, err_paral,
+                             &found);
+    if(found) {
+#ifdef DEBUG
+       printf("Paral=%.2f+/-%.2f\n", *paral, *err_paral);
+#endif
+      } else {
+       fprintf(stderr, "Fatal error: HIP=%s not in Hipparcos main catalog!\n", HIP_name);
+       exit(-1);
+      }
+ // EOF if found_in_HIP_cat
+#ifdef DEBUG
+    } else {
+      printf("ZZZ/discov_name=%s not found in HIC catalog!\n",
+              discov_name);
+#endif
+    }
+  }
+
+return(status);
+}
