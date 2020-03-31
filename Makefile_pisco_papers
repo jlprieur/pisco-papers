@@ -12,8 +12,9 @@ CPP = c++
 JLIB=$(mylib)/newplot0.a $(mylib)/jlp_wxplot.a $(mylib)/jlp_splot.a \
         $(mylib)/jlp_splot_idv.a $(mylib)/jlp_splot.a \
         $(mylib)/jlpacc.a $(mylib)/jlp_numeric.a \
-	$(mylib)/jlp_fits.a
+	$(mylib)/jlp_fits.a $(mylib)/libcfitsio.a
 
+PSCPLIB = pscplib
 CATALOG_OBJ=$(PSCPLIB)/jlp_catalog_utils.o $(PSCPLIB)/PISCO_catalog_utils.o \
 	$(PSCPLIB)/WDS_catalog_utils.o \
 	$(PSCPLIB)/OC6_catalog_utils.o $(PSCPLIB)/HIP_catalog_utils.o \
@@ -37,7 +38,7 @@ DEP_MYPLOT=$(PSCPLIB)/orbit_plot_utils.h  $(MYPLOT_SRC)
 WX_LIB := `wx-config --libs base,core`
 CFLAGS = -g -I. -I../jlplib/jlp_fits -I../jlplib/jlp_numeric \
 	-I../jlplib/cfitsio/incl -I../jlplib/jlp_splot_idv \
-	-I../jlplib/jlp_splot
+	-I../jlplib/jlp_splot -I../jlplib/jlp_gsegraf/jlp_gsegraf_include
 
 .SUFFIXES:
 .SUFFIXES:  .o .c.cpp .for .exe $(SUFFIXES) 
