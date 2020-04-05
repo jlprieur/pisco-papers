@@ -31,13 +31,20 @@ int astrom_calib_copy(FILE *fp_in, FILE *fp_out, double *calib_scale1,
                       int comments_wanted, int input_with_header);
 int astron_calib_write_miniheader(FILE *fp_out);
 int astrom_add_WDS(FILE *fp_in, FILE *fp_out, char *PISCO_cat, char *WDS_cat); 
-int astrom_add_new_object(char *b_data, OBJECT *obj, int *nobj, int i_notes);
+int astrom_add_new_object_with_wds_data(char *b_data, OBJECT *obj, int *nobj, 
+                                        int i_notes);
+int astrom_add_new_object_without_wds_data(char *b_data, OBJECT *obj, 
+                                           int *nobj);
 int astrom_read_measures(FILE *fp_in, int comments_wanted, OBJECT *obj, 
                          int *nobj, int i_filename, int i_date, 
                          int i_filter, int i_eyepiece, int i_rho, 
-                         int i_drho, int i_theta, int i_dtheta, int i_notes);
+                         int i_drho, int i_theta, int i_dtheta, int i_notes,
+                         int with_wds_data);
 int astrom_write_publi_table(FILE *fp_out, int comments_wanted, OBJECT *obj, 
                              int *index_obj, int nobj, int tabular_only);
+int astrom_write_publi_table_gili(FILE *fp_out, int comments_wanted,
+                                  OBJECT *obj, int *index_obj, int nobj,
+                                  int tabular_only);
 int astrom_mean_for_paper2(OBJECT *obj, int nobj);
 int astrom_mean_for_full_table(OBJECT *obj, int nobj);
 int astrom_compute_mean_of_two_measures(OBJECT *obj, int io, int jm1, int jm2);

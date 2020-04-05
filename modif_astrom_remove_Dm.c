@@ -1,5 +1,5 @@
 /************************************************************************
-* "modif_astrom1.c"
+* "modif_astrom_remove_Dm.c"
 *
 * To modify the astrom_15b.txt for example 
 * (removes Dm=0.05+\-0.02 at the end of a line)

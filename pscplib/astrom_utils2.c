@@ -70,7 +70,7 @@ while(!feof(fp_in))
 /* In "FITS_utils.c" */
            get_bessel_epoch_from_fits_file(fits_filename, full_directory, 
                                            &epoch0, date0, &epoch_was_found);
- printf("OK: epoch_was_found=%d (bessel epoch0=%f)\n", epoch_was_found, epoch0);
+ printf("astrom_add_epoch_from_fits_file: epoch_was_found=%d (bessel epoch0=%f)\n", epoch_was_found, epoch0);
            if(epoch_was_found) { 
 /* Remove "\\" (EOF line for Latex tables) if present: */
             pc = b_in;
@@ -81,7 +81,6 @@ while(!feof(fp_in))
             *pc = '\0';
 /* Add epoch to truncated line: */
             sprintf(b_in, "%s EP=%.4f \\\\\n", b_in, epoch0);
- printf("OK: >%s<\n", b_in);
             }
          } /* EOF is_measurement */
     }  /* EOF case of not commented line*/
@@ -308,15 +307,9 @@ while(!feof(fp_in))
 /* Analyse this line: */
     if(!strncmp(b_in,"\\begin{tabular}",15)){
        inside_array = 1;
-#ifdef DEBUG
-printf(" OK: >%s< inside_array=%d\n", b_in, inside_array);
-#endif
         }
     else if(!strncmp(b_in,"\\end{tabular}",13)){
        inside_array = 0;
-#ifdef DEBUG
-printf(" OK: >%s< inside_array=%d\n", b_in, inside_array);
-#endif
        }
 // JLP2009: to correct the possible case of " %%" instead of "%%":
     else if(inside_array && (b_in[0] != '%' && b_in[1] != '%')
@@ -430,7 +423,7 @@ int astrom_calib_publi(FILE *fp_in, FILE *fp_out,  double *calib_scale1,
                        int comments_wanted, char *filein, int gili_format)
 {
 OBJECT *obj;
-int *index_obj, tabular_only;
+int *index_obj, tabular_only, with_wds_data;
 int i, nobj = 0;
 
 if((obj = (OBJECT *)malloc(NOBJ_MAX * sizeof(OBJECT))) == NULL) {
@@ -447,9 +440,10 @@ if((index_obj = (int *)malloc((NOBJ_MAX) * sizeof(int))) == NULL) {
   exit(-1);
   }
 
+with_wds_data = 1;
 astrom_read_measures(fp_in, comments_wanted, obj, &nobj, i_filename, i_date, 
                      i_filter, i_eyepiece, i_rho, i_drho, i_theta, i_dtheta, 
-                     i_notes);
+                     i_notes, with_wds_data);
 
 #ifdef DEBUG
 printf("Returned by astrom_read_measures: nobj = %d\n", nobj);
@@ -859,6 +853,7 @@ return(0);
 * i_dtheta: column nber with dtheta values
 * i_notes: column nber with the notes
 * nobj: number of objects already entered into *obj 
+* with_wds_data: flag set to one if wds data are in the input file 
 *
 * OUTPUT:
 * obj: OBJECT structure 
@@ -867,7 +862,8 @@ return(0);
 int astrom_read_measures(FILE *fp_in, int comments_wanted, OBJECT *obj, 
                          int *nobj, int i_filename, int i_date, 
                          int i_filter, int i_eyepiece, int i_rho, 
-                         int i_drho, int i_theta, int i_dtheta, int i_notes)
+                         int i_drho, int i_theta, int i_dtheta, int i_notes,
+                         int with_wds_data)
 {
 char b_in[NMAX], b_data[NMAX];
 char wds_name[40], discov_name[40], ads_name[40]; 
@@ -875,7 +871,9 @@ int inside_array, line_is_opened, status, orbit, line_to_reject, i_obj;
 int input_with_header;
 char *pc, *pc1;
 
-printf("ZZZ read_measures: nobj=%d\n", *nobj);
+#ifdef DEBUG
+printf("astrom_read_measures: input/nobj=%d\n", *nobj);
+#endif
 
 /* JLP 2014: automatic check with the first line */
 /* Read first line: */
@@ -947,34 +945,39 @@ while(!feof(fp_in))
          } 
      if(!line_is_opened) { 
 #ifdef DEBUG
-printf(" Data line: >%s<\n", b_data);
+printf("\n astrom_read_measures/New line: >%s<\n", b_data);
+printf(" astrom_read_measures/Trying to add a new object, current nobj=%d (wds_data=%d)\n", 
+       *nobj, with_wds_data);
 #endif
-#ifdef DEBUG
-printf(" Checking if it is a new object: #nobj=%d\n", *nobj);
-#endif
-/* Try to add a new object: */
-       status = astrom_add_new_object(b_data, obj, nobj, i_notes);
+/* Try to add a new object and add the parameters of this object to obj: */
+       if(with_wds_data == 1) 
+            status = astrom_add_new_object_with_wds_data(b_data, obj, nobj, 
+                                                         i_notes);
+       else 
+            status = astrom_add_new_object_without_wds_data(b_data, obj, nobj); 
        if(status == 0) {
 /* Index of current object in OBJECT structure array: */
           i_obj = *nobj - 1;
           (obj[i_obj]).nmeas = 0;
           }
-printf(" OK: status_obj=%d index of object #i_obj=%d nm=%d (nobj=%d)\n", 
-         status, i_obj, (obj[i_obj]).nmeas, nobj);
+
 
 /* Try to add a new measure: */
-       if((status != 0) && (*nobj > 1)) {
+// JLP2020 it was != 0 : why ??
+       if((status == 0) && (*nobj > 1)) {
          status = astrom_check_measure(b_data, i_eyepiece, i_rho, i_drho, 
                                        i_theta, i_dtheta);
 #ifdef DEBUG
-printf(" Adding new measurement for object #i_obj=%d nm=%d (nobj=%d)\n", 
-         i_obj, (obj[i_obj]).nmeas, nobj);
+printf("astrom_read_measures/Adding new measurement for object #i_obj=%d nm=%d (nobj=%d, status=%d)\n", 
+         i_obj, (obj[i_obj]).nmeas, *nobj, status);
 #endif
           if(status == 0) {
            astrom_add_new_measure(b_data, obj, i_obj, i_filename, i_date, 
                            i_filter, i_eyepiece, i_rho, i_drho, i_theta, 
                            i_dtheta, i_notes, comments_wanted);
            } 
+printf("astrom_read_measures/ nmeas=%d rho=%.2f theta=%.2f\n", obj[i_obj].measure[0].rho,
+        (obj[i_obj]).nmeas, obj[i_obj].measure[0].theta);
          }
 
        } /* EOF !line_is_opened */
@@ -985,7 +988,8 @@ return(0);
 }
 /**************************************************************************
 * Check if current line is that of a new object.
-* If so, load corresponding data into new OBJECT structure
+* If so, load corresponding data into new OBJECT structure:
+*  ob->nmeas, ob->orbit, ob->ra, ob->dec, ob->WR, ob->WT, ob->WY
 *
 * Check if current line is compatible with the syntax of a new object
 * Example:
@@ -998,7 +1002,8 @@ return(0);
 *
 * i_notes: column nber with the notes
 **************************************************************************/
-int astrom_add_new_object(char *b_data, OBJECT *obj, int *nobj, int i_notes)
+int astrom_add_new_object_with_wds_data(char *b_data, OBJECT *obj, int *nobj, 
+                                        int i_notes)
 { 
 OBJECT *ob;
 double WR, WT, WY;
@@ -1007,17 +1012,18 @@ int status, orbit, ih, im;
 
 if(*nobj > NOBJ_MAX - 1) {
   fprintf(stderr, 
-          "astrom_add_new_object/Fatal error: maximum number of objects=%d is overtaken! \n", 
+          "astrom_add_new_object_with_wds_data/Fatal error: maximum number of objects=%d is overtaken! \n", 
            NOBJ_MAX);
   exit(-1);
   }
 
 ob = &obj[*nobj];
 
-status = astrom_read_object_data(b_data, wds_name, discov_name, ads_name, 
-                                 &orbit, &WR, &WT, &WY, i_notes);
+status = astrom_read_object_data_for_wds_or_ads(b_data, wds_name, discov_name, 
+                                                ads_name, &orbit, &WR, &WT, &WY,
+                                                i_notes);
 
-printf("ZZZ astrom_add_new_object/status=%d nobj = %d nm=%d\n", 
+printf("astrom_add_new_object_with_wds_data/status=%d nobj = %d nm=%d\n", 
        status, *nobj, ob->nmeas);
 
 if(status == 0) {
@@ -1059,6 +1065,66 @@ if(status == 0) {
 
 #ifdef DEBUG
   printf(" New object added: nobj = %d\n", *nobj);
+  printf(" name= %s %s %s orbit=%d", ob->wds, ob->name, ob->ads, ob->orbit);
+  printf(" ra= %f dec=%d WR=%f WT=%f WY=%f nm=%d\n", ob->ra, ob->dec, 
+           ob->WR, ob->WT, ob->WY, ob->nmeas);
+#endif
+  } else {
+#ifdef DEBUG
+  fprintf(stderr," Failure adding new object (nobj = %d) status =%d\n", 
+          *nobj, status);
+#endif
+  }
+
+return(status);
+}
+/**************************************************************************
+* Check if current line is that of a new object.
+* If so, load corresponding data into new OBJECT structure:
+*  ob->nmeas, ob->orbit, ob->ra, ob->dec, ob->WR, ob->WT, ob->WY
+*
+* Check if current line is compatible with the syntax of a new object
+* Example:
+* 16564+6502 = STF 2118 AB & ADS 10279 & 2004. & & & & & & & orb \\
+* Or:
+*  & ADS 10279 & 2004. & & & & & & & \\
+*
+*
+**************************************************************************/
+int astrom_add_new_object_without_wds_data(char *b_data, OBJECT *obj, int *nobj)
+{ 
+OBJECT *ob;
+char discov_name[40], *pc, buffer[40];
+int status, epoch_year, ih, im;
+
+if(*nobj > NOBJ_MAX - 1) {
+  fprintf(stderr, 
+          "astrom_add_new_object_without_wds_data/Fatal error: maximum number of objects=%d is overtaken! \n", 
+           NOBJ_MAX);
+  exit(-1);
+  }
+
+ob = &obj[*nobj];
+
+status = astrom_read_object_data_for_name_only(b_data, discov_name, &epoch_year); 
+
+if(status == 0) {
+  strcpy(ob->wds, "");
+  strcpy(ob->ads, "");
+  strcpy(ob->name, discov_name);
+  ob->nmeas = 0;
+  ob->orbit = 0;
+  ob->ra = 0.;
+  ob->dec = 0.;
+  ob->WR = 0.;
+  ob->WT = 0.;
+  ob->WY = 0.;
+
+// Increase the number of objects:
+  (*nobj)++;
+
+#ifdef DEBUG
+  printf(" astrom_add_new_object_without_wds_data/New object added: nobj = %d\n", *nobj);
   printf(" name= %s %s %s orbit=%d", ob->wds, ob->name, ob->ads, ob->orbit);
   printf(" ra= %f dec=%d WR=%f WT=%f WY=%f nm=%d\n", ob->ra, ob->dec, 
            ob->WR, ob->WT, ob->WY, ob->nmeas);

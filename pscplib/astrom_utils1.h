@@ -73,9 +73,11 @@ double WY;               /* Year of last measurement in WDS_CHARA data base */
 extern "C" {
 #endif
 
-int astrom_read_object_data(char *b_data, char *wds_name, char *discov_name,
-                            char *ads_name, int *orbit, double *WR, double *WT, 
-                            double *WY, int i_notes);
+int astrom_read_object_data_for_wds_or_ads(char *b_data, char *wds_name, 
+                            char *discov_name, char *ads_name, int *orbit, 
+                            double *WR, double *WT, double *WY, int i_notes);
+int astrom_read_object_data_for_name_only(char *b_data, char *star_name, 
+                            int *epoch_year);
 int astrom_check_measure(char *b_data, int i_eyepiece, int i_rho, 
                          int i_drho, int i_theta, int i_dtheta);
 int astrom_calibrate_measures(OBJECT *obj, int nobj,  double *calib_scale1,
@@ -102,6 +104,7 @@ int astrom_compute_epoch_value(char *b_data, char *date, double *epoch,
 int latex_write_fvalue(char *b_data, char *b_out, double value, int icol, 
                        int nber_of_decimals);
 int astrom_ra_sort_objects(OBJECT *obj, int *index_obj, int nobj);
+int astrom_name_sort_objects(OBJECT *obj, int *index_obj, int nobj);
 int astrom_read_WDS_CHARA(char *notes, double *WR, double *WT, double * WY);
 int astrom_read_quadrant_Q(char *notes, int *quadrant, int *dquadrant,
                            int comments_wanted);

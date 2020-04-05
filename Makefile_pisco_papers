@@ -10,9 +10,9 @@
 mylib=$(JLPLIB)/jlp
 CPP = c++
 JLIB=$(mylib)/newplot0.a $(mylib)/jlp_wxplot.a $(mylib)/jlp_splot.a \
+	$(mylib)/jlp_fits.a $(mylib)/libcfitsio.a $(mylib)/jlp_fits.a \
         $(mylib)/jlp_splot_idv.a $(mylib)/jlp_splot.a \
-        $(mylib)/jlpacc.a $(mylib)/jlp_numeric.a \
-	$(mylib)/jlp_fits.a $(mylib)/libcfitsio.a
+        $(mylib)/jlpacc.a $(mylib)/jlp_numeric.a 
 
 PSCPLIB = pscplib
 CATALOG_OBJ=$(PSCPLIB)/jlp_catalog_utils.o $(PSCPLIB)/PISCO_catalog_utils.o \
@@ -36,7 +36,7 @@ MYPLOT_SRC=$(MYPLOT_OBJ:.o=.c)
 DEP_MYPLOT=$(PSCPLIB)/orbit_plot_utils.h  $(MYPLOT_SRC)
 
 WX_LIB := `wx-config --libs base,core`
-CFLAGS = -g -I. -I../jlplib/jlp_fits -I../jlplib/jlp_numeric \
+CFLAGS = -g -I./$(PSCPLIB) -I../jlplib/jlp_fits -I../jlplib/jlp_numeric \
 	-I../jlplib/cfitsio/incl -I../jlplib/jlp_splot_idv \
 	-I../jlplib/jlp_splot -I../jlplib/jlp_gsegraf/jlp_gsegraf_include
 
@@ -47,23 +47,21 @@ CFLAGS = -g -I. -I../jlplib/jlp_fits -I../jlplib/jlp_numeric \
 	$(CPP) -c $(CFLAGS) $*.cpp
 	$(CPP) $(CFLAGS) -o $(EXEC)/$*.exe $*.o $(CATALOG_OBJ) \
 	$(ASTROM_OBJ) \
-	$(MATHLIB) $(JLIB) $(FITSLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
-# $(JLIB) $(MATHLIB) $(FITSLIB) $(XLIB) $(LIBC) -lm
+	$(MATHLIB) $(JLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
 	rm $*.o
 
 .c.exe:
 	$(CC) -c $(CFLAGS) $*.c
 	$(CC) $(CFLAGS) -o $(EXEC)/$*.exe $*.o $(CATALOG_OBJ) \
-	$(MATHLIB) $(JLIB) $(FITSLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
-# $(JLIB) $(MATHLIB) $(FITSLIB) $(XLIB) $(LIBC) -lm
+	$(ASTROM_OBJ) \
+	$(MATHLIB) $(JLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm 
 	rm $*.o
 
 .for.exe:
 #	$(EXEC)/esoext1.exe -I ../jlpsub -f $*.for
 	$(F77) -c $(FFLAGS) $*.for
 	$(F77) $(FFLAGS) -o $(EXEC)/$*.exe $*.o \
-	$(MATHLIB) $(JLIB) $(FITSLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
-# $(JLIB) $(MATHLIB) $(FITSLIB) $(XLIB) $(LIBC) -lm
+	$(MATHLIB) $(JLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
 	rm $*.o
 
 #.o.exe:

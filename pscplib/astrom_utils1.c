@@ -49,9 +49,11 @@ LQ=3        (Quadrant with long integration)
 */
 
 /*
-int astrom_read_object_data(char *b_data, char *wds_name, char *discov_name, 
-                            char *ads_name, int *orbit, double *WR, double *WT,
-                            double *WY, int i_notes);
+int astrom_read_object_data_for_wds_or_ads(char *b_data, char *wds_name, 
+                            char *discov_name, char *ads_name, int *orbit, 
+                            double *WR, double *WT, double *WY, int i_notes);
+int astrom_read_object_data_for_name_only(char *b_data, char *star_name,  
+                            int *epoch_year);
 int astrom_check_measure(char *b_data, int i_eyepiece, int i_rho, 
                          int i_drho, int i_theta, int i_dtheta);
 int astrom_calibrate_measures(OBJECT *obj, int nobj,  double *calib_scale1,
@@ -91,6 +93,7 @@ int astrom_read_dmag_from_notes(char *notes, double *dmag, double *ddmag,
 int astrom_preformat_wds_name(char *obj_wds, char *wds_name);
 int astrom_check_if_object_name(char *b_in, int *contains_object_name);
 int astrom_ra_sort_objects(OBJECT *obj, int *index_obj, int nobj);
+int astrom_name_sort_objects(OBJECT *obj, int *index_obj, int nobj);
 */
 
 /*************************************************************************
@@ -103,7 +106,8 @@ HO 295 AB & ADS 16138 & 2004. & & & & & & & orb \\
 * INPUT:
 * i_notes: column nber containing the notes
 *************************************************************************/
-int astrom_read_object_data(char *b_data, char *wds_name, char *discov_name,
+int astrom_read_object_data_for_wds_or_ads(char *b_data, 
+                            char *wds_name, char *discov_name,
                             char *ads_name, int *orbit, double *WR, double *WT, 
                             double *WY, int i_notes)
 {
@@ -195,6 +199,46 @@ if(!istat) {
 return(ADS_status);
 }
 /*************************************************************************
+*
+ 22388+4419 = HO 295 AB & ADS 16138 & 2004. & & & & & & & orb \\
+or:
+& A1053f200S & 2011 & & & & & & & \\
+*
+* INPUT:
+*  b_data
+*
+* OUTPUT:
+*  star_name, epoch_year
+*************************************************************************/
+int astrom_read_object_data_for_name_only(char *b_data, char *star_name,
+                            int *epoch_year)
+{
+int status = -1, ival;
+char *pc, buff[60];
+int istat, star_name_status, icol;
+
+star_name_status = 1;
+star_name[0] = '\0';
+*epoch_year = 0.;
+
+/* Reads object name in 2nd column: */
+icol = 2;
+istat = latex_read_svalue(b_data, buff, icol); 
+if(!istat && (buff[0] != '\0')){
+ star_name_status = 0;
+ strcpy(star_name, buff);
+ }
+
+/* Then tries to read epoch_year in 3rd column: */
+icol = 3;
+istat = latex_read_ivalue(b_data, &ival, icol); 
+if(!istat){
+ *epoch_year = ival;
+ }
+
+return(star_name_status);
+}
+/*************************************************************************
 * Check whether input line is a measurement
 *
 * INPUT:
@@ -204,7 +248,7 @@ return(ADS_status);
 * i_theta: column number with theta values
 * i_dtheta: column number with dtheta values
 *
-* return 0 if sucessful
+* return 0 if successful
 *************************************************************************/
 int astrom_check_measure(char *b_data, int i_eyepiece, int i_rho, 
                          int i_drho, int i_theta, int i_dtheta)
@@ -414,8 +458,10 @@ int iverbose = 0;
 /* Return if no object has been entered yet: */
 if(i_obj < 0) return(-1);
 
-printf("ZZZ astrom_add_new_measure/add new measure from %s (i=%d) nm=%d\n", 
+#ifdef DEBUG
+printf("astrom_add_new_measure/add new measure from %s (i=%d) nm=%d\n", 
        (obj[i_obj]).name, i_obj, (obj[i_obj]).nmeas);
+#endif
 
 eyepiece = 0;
 quadrant = 0;
@@ -433,15 +479,20 @@ notes[0] = '\0';
 /* Read date and compute epoch: */
 epoch = 0.;
 status = astrom_compute_epoch_value(b_data, date, &epoch, i_date); 
+#ifdef DEBUG
+printf("compute epoch with date: epoch=%.2f i_date=%d, status=%d\n", 
+        epoch, i_date, status);
+#endif
 
 status = latex_read_fvalue(b_data, &rho, i_rho, iverbose); 
-if(!status) status = latex_read_fvalue(b_data, &drho, i_drho, iverbose); 
-if(!status) status = latex_read_fvalue(b_data, &theta, i_theta, iverbose); 
-if(!status) status = latex_read_fvalue(b_data, &dtheta, i_dtheta, iverbose); 
-if(!status) {
-  status = latex_read_fvalue(b_data, &ww, i_eyepiece, iverbose); 
-  eyepiece = (int)(ww+0.5);
-  }
+#ifdef DEBUG
+printf("rho=%.2f i_rho=%d, status=%d\n", rho, i_rho, status);
+#endif
+status = latex_read_fvalue(b_data, &drho, i_drho, iverbose); 
+status = latex_read_fvalue(b_data, &theta, i_theta, iverbose); 
+status = latex_read_fvalue(b_data, &dtheta, i_dtheta, iverbose); 
+status = latex_read_fvalue(b_data, &ww, i_eyepiece, iverbose); 
+if(status == 0) eyepiece = (int)(ww+0.5);
 
 /* Read non-compulsory parameters */
    latex_read_svalue(b_data, filename, i_filename);
@@ -523,11 +574,13 @@ if(!status) {
    ((obj[i_obj]).nmeas)++;
 
 #ifdef DEBUG
+     printf("astrom_add_new_measure ******************\n");
      printf(" i_obj=%d, new measure successfully added (nm=%d)\n", i_obj,
               (obj[i_obj]).nmeas);
      printf(" rho=%.2f drho=%.2f theta=%.2f dtheta=%.2f eyep.=%d Q=%d dQ=%d record=%d notes=>%s<\n", 
                    me->rho, me->drho, me->theta, me->dtheta, me->eyepiece,
                    me->quadrant, me->dquadrant, me->from_recorded_file, me->notes);
+     printf("******************\n");
 #endif
    }
 #ifdef DEBUG
@@ -820,6 +873,40 @@ strcpy(&b_out[istart+9],&b_data[iend]);
 /*
 printf("update_value/from >%s< to >%s< (value=%.2f)\n", b_data, b_out, value);
 */
+
+return(0);
+}
+/***************************************************************************
+* astrom_name_sort_objects
+* Calling routine  JLP_QSORT_INDX_CHAR()
+*
+* INPUT:
+*  array[nn]: array to be sorted
+*
+* OUTPUT:
+*  array[nn]: sorted array
+*  index[nn]: array giving the index of the input array,
+*             to sort other arrays in the same way if necessary
+*             (f.i. array2[i] := array2[index[i]])
+****************************************************************************/
+int astrom_name_sort_objects(OBJECT *obj, int *index_obj, int nobj)
+{
+int k, length, j, status;
+char buffer[60*10000];
+
+if(nobj > 10000) 
+   {
+   printf("astrom_name_sort_objects/Fatal error: nobj=%d > %d\n",
+           nobj, 10000);
+   exit(-1);
+   }
+/* When length = 1, sort elements according to first letter only */
+length = 60;
+
+for(j = 0; j < 60 * nobj; j++) strcpy(&buffer[j*60], obj[j].name);
+
+/* Sort "buffer" array by alphabetic order: */
+JLP_QSORT_INDX_CHAR(buffer, &length, index_obj, &nobj);
 
 return(0);
 }
