@@ -1,7 +1,6 @@
 /************************************************************************
 * "jlp_catalog_utils.c"
-* Set of routines used 
-* for CALIBrated table (from latex_calib.c) and Latex tables
+* Set of routines used for CALIBrated table 
 *
 * JLP 
 * Version 05/05/2010
@@ -16,10 +15,7 @@
 * are defined in "jlp_catalog_utils.h":
 */
 #include "jlp_catalog_utils.h"
-
-#ifndef MAXI
-#define MAXI(a,b) ((a) < (b)) ? (b) : (a)
-#endif
+#include "latex_utils.h"  // latex_get_column_item()
 
 /*
 #define DEBUG 
@@ -38,7 +34,7 @@ static int read_series_of_measures_gili(char *in_line, FILE *fp_calib_table,
                                    int comp_is_AB, double *epoch_o, 
                                    double *rho_o, double *theta_o,
                                    double *err_rho_o, double *err_theta_o, 
-                                   int *nmeas);
+                                   int *nmeas, int gili_format);
 
 /*********************************************************************
 * Check if str1 is contained in in_line1
@@ -176,7 +172,7 @@ int get_measures_from_CALIB_table_gili(char *calib_fname, char *object_name,
                                   char *comp_name, double *epoch_o, 
                                   double *rho_o, double *theta_o,
                                   double *err_rho_o, double *err_theta_o, 
-                                  int *nmeas)
+                                  int *nmeas, int gili_format)
 {
 char in_line[300], name1[40], name2[40], comp_name1[40], comp_name2[40]; 
 int icol, iline, status;
@@ -238,7 +234,8 @@ while(!feof(fp_calib_table)){
              read_series_of_measures_gili(in_line, fp_calib_table, 
                                      object_name, comp_name, 
                                      name1, comp1_is_AB, epoch_o, rho_o, 
-                                     theta_o, err_rho_o, err_theta_o, nmeas);
+                                     theta_o, err_rho_o, err_theta_o, nmeas,
+                                     gili_format);
             }
     } /* EOF case name1 == name2 */
   } /* EOF isdigit(in_line[0]) */
@@ -283,6 +280,12 @@ char *pc1, name22[40];
     }
 
       jlp_compact_string(name2, 40);
+/* Remove companion if present in name2: */
+      pc1 = name2;
+      while(*pc1  && (isalpha(*pc1) || *pc1 == ' ')) pc1++;
+      while(*pc1  && (isdigit(*pc1) || *pc1 == ' ')) pc1++;
+      *pc1 = '\0';
+
 /* Get discover name */
       status = latex_get_column_item(in_line, name22, 2, verbose_if_error);
       jlp_compact_string(name22, 40);
@@ -327,6 +330,12 @@ char *pc1, name22[40];
 /* Get discover name */
   status = latex_get_column_item(in_line, name22, 2, verbose_if_error);
   jlp_compact_string(name22, 40);
+/* Remove companion if present in name2: */
+      pc1 = name2;
+      while(*pc1  && (isalpha(*pc1) || *pc1 == ' ')) pc1++;
+      while(*pc1  && (isdigit(*pc1) || *pc1 == ' ')) pc1++;
+      *pc1 = '\0';
+
 /* Compagnon name (AB, Aa, BC, etc) from discover name 
 * (after the numbers) */
   comp_name2[0] = '\0';
@@ -449,7 +458,7 @@ static int read_series_of_measures_gili(char *in_line, FILE *fp_calib_table,
                                    int comp_is_AB, double *epoch_o, 
                                    double *rho_o, double *theta_o,
                                    double *err_rho_o, double *err_theta_o, 
-                                   int *nmeas)
+                                   int *nmeas, int gili_format)
 {
 register int kk;
 int comp2_is_AB, object2_is_ADS;
@@ -468,7 +477,8 @@ line_is_OK = 1;
 do {
 status = read_measures_from_CALIB_line_gili(in_line, &epoch_o[kk],
                                        &rho_o[kk], &err_rho_o[kk],
-                                       &theta_o[kk], &err_theta_o[kk]);
+                                       &theta_o[kk], &err_theta_o[kk],
+                                       gili_format);
 if(status > 0) { 
   fprintf(stderr, "Object found: object_name=%s %s (kk=%d) but error retrieving data\n",
        object_name, comp_name, kk); 
@@ -598,10 +608,26 @@ return(0);
 ***************************************************************************/
 int read_measures_from_CALIB_line_gili(char *in_line, double *epoch, 
                                    double *rho, double *err_rho,
-                                   double *theta, double *err_theta)
+                                   double *theta, double *err_theta,
+                                   int gili_format)
 {
 char buffer[120];
 int status, verbose_if_error = 1;
+int irho, ierr_rho, itheta, ierr_theta;
+
+/* Read rho in column irho=5 for Gili, irho=6 for Calern: */
+if(gili_format == 1) {
+ irho = 5;
+ ierr_rho = 6;
+ itheta = 7;
+ ierr_theta = 8;
+// Filter column in Calern format makes all columns shift by one:
+} else {
+ irho = 6;
+ ierr_rho = 7;
+ itheta = 8;
+ ierr_theta = 9;
+}
 
 *epoch = 0.; *rho = 0.; *err_rho = 0.; 
 *theta = 0.; *err_theta = 0.;
@@ -612,8 +638,8 @@ status = latex_get_column_item(in_line, buffer, 3, verbose_if_error);
   fprintf(stderr,"read_measures_from_CALIB_line/Error reading epoch: %s\n", in_line);
   return(-1); 
   } 
-/* Read rho in column 5: */
-status = latex_get_column_item(in_line, buffer, 5, verbose_if_error);
+/* Read rho in column irho=5 for Gili, irho=6 for Calern: */
+status = latex_get_column_item(in_line, buffer, irho, verbose_if_error);
   if(status) {
   fprintf(stderr,"read_measures_from_CALIB_line/Error reading rho: %s\n", in_line);
   return(-1); 
@@ -628,20 +654,20 @@ status = latex_get_column_item(in_line, buffer, 5, verbose_if_error);
    }
   }
 
-/* Read err_rho in column 6: */
-status = latex_get_column_item(in_line, buffer, 6, verbose_if_error);
+/* Read err_rho in column ierr_rho=6 for Gili, ierr_rho=7 for Calern: */
+status = latex_get_column_item(in_line, buffer, ierr_rho, verbose_if_error);
   if(status || (sscanf(buffer,"%lf", err_rho) != 1)) {
   fprintf(stderr,"read_measures_from_CALIB_line/Error reading err_rho: %s\n", in_line);
   return(-1); 
   }
-/* Read theta in column 7: */
-status = latex_get_column_item(in_line, buffer, 7, verbose_if_error);
+/* Read theta in column itheta=7 for Gili: */
+status = latex_get_column_item(in_line, buffer, itheta, verbose_if_error);
   if(status || (sscanf(buffer,"%lf", theta) != 1)) {
   fprintf(stderr,"read_measures_from_CALIB_line/Error reading theta: %s\n", in_line);
   return(-1); 
   } 
-/* Read err_theta in column 8: */
-status = latex_get_column_item(in_line, buffer, 8, verbose_if_error);
+/* Read err_theta in column err_theta=8 for Gili: */
+status = latex_get_column_item(in_line, buffer, ierr_theta, verbose_if_error);
   if(status || (sscanf(buffer,"%lf", err_theta) != 1)) {
   fprintf(stderr,"read_measures_from_CALIB_line/Error reading err_theta: %s\n", in_line);
   return(-1); 
@@ -781,19 +807,21 @@ return(0);
 ***********************************************************************/
 int get_values_from_RESID_table(char *resid_fname, char *object_name,
                                 char *comp_name, double epoch_o, double rho_o,
-                                char *orbit_ref, int ref_slength,
-                                double *rho_o_c,
+                                char *orbit_ref, int *orbit_grade,
+                                int ref_slength, double *rho_o_c,
                                 double *theta_o_c, char *quadrant_discrep,
                                 int *norbits_found, int nmax_orbits)
 {
-char in_line[128], object_name0[128], *pc;
+char in_line[128], object_name0[128], *pc, orbit_grade_str0[128];
 double epoch_o_c, rho_val0, rho0, theta0;
-int status, iline, verbose_if_error = 1, kk;
+int status, iline, verbose_if_error = 1, kk, orbit_grade0;
 char orbit_ref0[40], comp_name0[40], comp_name1[40], object_name1[40];
 char old_orbit_ref[40];
+char quadr0[20];
 int comp_is_AB, comp0_is_AB;
 FILE *fp_resid_table;
 
+*orbit_grade = 0;
 *rho_o_c = -100.;
 *theta_o_c = -100.;
 for(kk = 0; kk < nmax_orbits; kk++) strcpy(&orbit_ref[kk*ref_slength], "");
@@ -836,7 +864,7 @@ while(!feof(fp_resid_table)){
       }
     jlp_compact_string(object_name0, 40);
 /* Extract the companion and cut the object name: */
-      comp_name = '\0';
+      comp_name[0] = '\0';
        if(*object_name0) {
           pc = object_name0;
           while(*pc  && (isalpha(*pc) || *pc == ' ')) pc++;
@@ -865,6 +893,11 @@ printf("comp_is_AB=%d< comp0_is_AB=%d<\n", comp_is_AB, comp0_is_AB);
                    resid_fname, iline); 
            exit(-1);
            }
+// Orbit grade in column 8:
+        latex_get_column_item(in_line, orbit_grade_str0, 8, verbose_if_error);
+        sscanf(orbit_grade_str0, "%d", &orbit_grade0);
+
+// Orbit reference in column 2:
         latex_get_column_item(in_line, orbit_ref0, 2, verbose_if_error);
 /* Truncate to the first word only 
 * Cou1973b - Couteau (1973b)    => Cou1973b
@@ -875,17 +908,21 @@ printf("comp_is_AB=%d< comp0_is_AB=%d<\n", comp_is_AB, comp0_is_AB);
         if( (ABS(epoch_o_c - epoch_o) < 0.002 ) 
             && (ABS(rho_o - rho_val0) < 0.002) 
            && (strcmp(orbit_ref0, old_orbit_ref) != 0)) {
-printf("get_values_from_RESID_table/DEBUG: object=>%s epoch_o=%f epoch_o_c=%f (old_orbit_ref=%s) rho_val0=%f\n", 
-        object_name1, epoch_o, epoch_o_c, old_orbit_ref, rho_val0);
+/* DEBUG
+printf("get_values_from_RESID_table/DEBUG: object=>%s epoch_o=%f epoch_o_c=%f (old_orbit_ref=%s) rho_val0=%f rho_o-c=%f\n", 
+        object_name1, epoch_o, epoch_o_c, old_orbit_ref, rho_val0, rho0);
+*/
 
           strcpy(old_orbit_ref, orbit_ref0);
           rho_o_c[kk] = rho0;
           theta_o_c[kk] = theta0;
-          if(is_in_line(in_line, "$^Q$")){
+          strcpy(quadr0, "$^Q$");
+          if(is_in_line(in_line, quadr0)){
             strcpy(quadrant_discrep, "\\rlap{$^Q$}");
             }
 
           strcpy(&orbit_ref[kk * ref_slength], orbit_ref0);
+          *orbit_grade = orbit_grade0;
 
           kk++;
 /*      break; */
@@ -905,7 +942,7 @@ return(0);
 * Read data from resdiual Latex table as generated by residuals_1.c
 *
 * Example:
-* ADS 9494 AB & Sod1999 - Soderhjelm (1999) & 2007.534 & 1.842 & 0.01 & 0.10 \\
+* ADS 9494 AB & Sod1999 - Soderhjelm (1999) & 2007.534 & 1.842 & 350.4 & 0.01 & 0.10 \\
 ***************************************************************************/
 int read_values_from_RESID_line(char *in_line, double *epoch_o_c, 
                                 double *rho_val, double *rho_o_c, 
@@ -928,66 +965,20 @@ status = latex_get_column_item(in_line, buffer, 4, verbose_if_error);
   fprintf(stderr,"Error reading rho value: %s\n", in_line);
   return(-1); 
   } 
-/* Read rho_O-C in column 5: */
-status = latex_get_column_item(in_line, buffer, 5, verbose_if_error);
+/* Read rho_O-C in column 6: */
+status = latex_get_column_item(in_line, buffer, 6, verbose_if_error);
   if(status || (sscanf(buffer,"%lf", rho_o_c) != 1)) {
   fprintf(stderr,"Error reading rho_o_c: %s\n", in_line);
   return(-1); 
   }
-/* Read theta in column 6: */
-status = latex_get_column_item(in_line, buffer, 6, verbose_if_error);
+/* Read theta in column 7: */
+status = latex_get_column_item(in_line, buffer, 7, verbose_if_error);
   if(status || (sscanf(buffer,"%lf", theta_o_c) != 1)) {
   fprintf(stderr,"Error reading theta: %s\n", in_line);
   return(-1); 
   } 
 return(0);
 } 
-/************************************************************
-* Get character string in the icol th column of a LaTeX table
-*
-* INPUT:
-*  in_line: string corresponding to a full line of a Latex table
-*  icol: column number
-*
-* OUTPUT:
-*  item: character string corresponding to the column #icol
-* 
-************************************************************/
-int latex_get_column_item(char *in_line, char *item, int icol, 
-                          int verbose_if_error)
-{
-int ic;
-char *pc, buffer[512];
- pc = in_line;
-
-/* Get to the icol th column: */
- ic = 1;
- while(ic != icol) {
-   while(*pc && *pc != '&' && strncmp(pc, "\\cr", 3) 
-        && strncmp(pc, "\\\\", 2)) pc++; 
-    if(*pc == '&') {
-      pc++;
-      ic++;
-     } else {
-     if(verbose_if_error) {
-        fprintf(stderr, "latex_get_column_item/Error: column #%d not found in >%s<\n",
-             icol, in_line);
-        }
-     return(-1);
-     }
- }
-
-/* icol has been reached: */
- strcpy(buffer, pc);
- pc = buffer;
-/* Go to the next column or the end of line: */
- while(*pc && *pc != '&' && strncmp(pc, "\\cr", 3)
-        && strncmp(pc, "\\\\", 2)) pc++; 
- *pc = '\0';
- strcpy(item, buffer);
-
-return(0);
-}
 /************************************************************************
 * Extract ADS name from object name
 *

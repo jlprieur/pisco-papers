@@ -33,11 +33,12 @@
 int search_discov_name_in_WDS_catalog(char *WDS_catalog, char *discov_name,
                                       char *wds_name, int *found);
 int get_data_from_WDS_catalog(char *WDS_catalog, char *discov_name,
+                              char *comp_name,
                               char *wds_name, double *WdsLastYear, 
                               double *WdsLastRho, double *WdsLastTheta, 
                               double *WdsMagA, double *WdsMagB,
                               char *WdsSpectralType,
-                              int *has_an_orbit, int *found);
+                              int *found);
 int read_coordinates_from_WDS_catalog(char *wds_name, char *WDS_catalog, 
                                       double *alpha, double *delta,
                                       double *equinox, int *found);
@@ -119,12 +120,13 @@ while(!feof(fp_WDS_cat)) {
 * for Marco's file */
    jlp_compact_string(discov_name0, 20);
    if(!strcmp(discov_name, discov_name0)) {
-#ifdef DEBUG_1
-     printf("Object found in WDS catalog (discov_name =%s)\n", discov_name);
-     printf(" WDS=%s discov=%s comp=%s\n", wds_name0, discov_name0, comp_name0);
-#endif
      strcpy(wds_name, wds_name0);
      *found = 1;
+#ifdef DEBUG_1
+     printf("search_discov_name_in_WDS_catalog/Object found in WDS catalog (discov_name =%s) found=%d\n", 
+             discov_name, *found);
+     printf(" WDS=%s discov=%s comp=%s\n", wds_name0, discov_name0, comp_name0);
+#endif
      break;
      }
    } /* EOF cat_line[0] != '%' */
@@ -135,11 +137,12 @@ fclose(fp_WDS_cat);
 return(0);
 }
 /***********************************************************************
-* Get miscellaneous data from the WDS catalog
+* Get miscellaneous data from the WDS catalog from discov_name and comp_name
 *
 * INPUT:
 *  WDS_catalog: name of the WDS catalog
 *  discov_name1: discoverer's name of the object to be searched for
+*  comp_name1: companion name (if any) of thye object to be searched for
 *
 * OUTPUT:
 *  wds_name: WDS name corresponding to discov_name
@@ -147,24 +150,38 @@ return(0);
 *           observation reported in the WDS
 *  WdsMagA, WdsMagB : magnitude of primary and secondary components
 *  WdsSpectralType : spectral type of A and B (when known)
-*  has_an_orbit: 1 if it has an orbit, 0 otherwise
-*  found: 1 is object was found, 0 otherwise
+*  wds_meas_found: 1 is measures for this object has been found, 0 otherwise
 ***********************************************************************/
 int get_data_from_WDS_catalog(char *WDS_catalog, char *discov_name1,
+                              char *comp_name1,
                               char *wds_name, double *WdsLastYear, 
                               double *WdsLastRho, double *WdsLastTheta, 
                               double *WdsMagA, double *WdsMagB,
                               char *WdsSpectralType,
-                              int *has_an_orbit, int *found)
+                              int *wds_meas_found)
 {
 FILE *fp_WDS_cat;
 char cat_line0[256], discov_name0[20], comp_name0[20], wds_name0[20];
-char cvalue[64], notes0[64], orbit0, *pc, discov_name[64];
+char cvalue[64], notes0[64], orbit0, *pc, full_discov_name[64];
+char full_discov_name0[64];
 double dvalue;
 int iline, ivalue;
 
-// Copy input discov_name (to allow further processing)
-strcpy(discov_name, discov_name1);
+
+// Copy input discov_name and comp name: 
+// Handle case of AB companion 
+jlp_compact_string(comp_name1, 20);
+if(!strcmp(comp_name1, "AB")) {
+  sprintf(full_discov_name, "%s", discov_name1);
+  } else {
+  sprintf(full_discov_name, "%s%s", discov_name1, comp_name1);
+  }
+
+/* DEBUG
+printf("get_data_from_WDS_catalog: looking for discov=%s comp=%s\n", 
+       discov_name1, comp_name1);
+printf("get_data_from_WDS_catalog: looking for full discov=%s\n", full_discov_name);
+*/
 
 *WdsLastYear = 0.;
 *WdsLastRho = 0.;
@@ -172,12 +189,11 @@ strcpy(discov_name, discov_name1);
 *WdsMagA = 0.;
 *WdsMagB = 0.;
 WdsSpectralType[0] = '\0';
-*has_an_orbit = 0;
 wds_name[0] = '\0';
 
 /* Removes all the blanks since 7 characters for WDS, and 8 characters 
 * for Marco's file */
-jlp_compact_string(discov_name, 20);
+jlp_compact_string(full_discov_name, 20);
 
 /* Open input file containing the WDS catalog */
 if((fp_WDS_cat = fopen(WDS_catalog, "r")) == NULL) {
@@ -187,7 +203,7 @@ if((fp_WDS_cat = fopen(WDS_catalog, "r")) == NULL) {
   }
 
 /* Look for the data concerning this object: */
-*found = 0;
+*wds_meas_found = 0;
 iline = 0;
 while(!feof(fp_WDS_cat)) {
  if(fgets(cat_line0, 256, fp_WDS_cat)) {
@@ -235,14 +251,22 @@ while(!feof(fp_WDS_cat)) {
 /* Removes all the blanks since 7 characters for WDS, and 8 characters 
 * for Marco's file */
    jlp_compact_string(discov_name0, 20);
-   if(!strcmp(discov_name, discov_name0)) {
-#ifdef DEBUG_1
-     printf("Object found in WDS catalog (discov_name =%s)\n", discov_name);
-     printf("WDS=%s discov=%s comp=%s\n", wds_name0, discov_name0, comp_name0);
-     printf("WDS_cat/notes0=%s pc=%s orbit=%d\n", notes0, pc, orbit0);
-#endif
+// Handle case of AB companion 
+   jlp_compact_string(comp_name0, 20);
+   if(!strcmp(comp_name0, "AB")) {
+     sprintf(full_discov_name0, "%s", discov_name0);
+   } else {
+     sprintf(full_discov_name0, "%s%s", discov_name0, comp_name0);
+   }
+   jlp_compact_string(full_discov_name0, 64);
+   if(!strcmp(full_discov_name, full_discov_name0)) {
+// Copy to output value of wds_name:
      strcpy(wds_name, wds_name0);
-     *has_an_orbit = orbit0;
+#ifdef DEBUG_1
+     printf("get_data_from_WDS_catalog/Full object name found in WDS catalog (discov_name =%s)\n", full_discov_name);
+     printf("WDS=%s discov=%s comp=%s\n", wds_name0, discov_name0, comp_name0);
+     printf("WDS_cat/notes0=%s pc_notes=%s orbit=%d\n", notes0, pc, orbit0);
+#endif
 /* Read WdsLastYear, WdsLastRho, WdsLastTheta: 
   24 -  27   I4              Date (first)
   29 -  32   I4              Date (last)
@@ -267,7 +291,11 @@ while(!feof(fp_WDS_cat)) {
      cvalue[5] = '\0';
      if(sscanf(cvalue, "%lf", &dvalue) == 1) *WdsLastRho = dvalue;
 
-     *found = 1;
+     *wds_meas_found = 1;
+#ifdef DEBUG
+     printf("last rho=%f theta=%f epoch=%f found=%d\n",
+             *WdsLastRho, *WdsLastTheta, *WdsLastYear, *wds_meas_found);
+#endif
      break;
      }
    } /* EOF cat_line[0] != '%' */
@@ -352,7 +380,7 @@ while(!feof(fp_WDS_cat)) {
    if(!strcmp(wds_name, wds_name0)) {
      *found = 1;
 #ifdef DEBUG
-     printf("Object found in WDS catalog (wds_name =%s)\n", wds_name);
+     printf("read_coordinates_from_WDS_catalog/Object found in WDS catalog (wds_name =%s)\n", wds_name);
 #endif
 
 /* Read WdsLastYear, WdsLastRho, WdsLastTheta: 
@@ -412,7 +440,8 @@ return(0);
 ***********************************************************************/
 int get_data_from_WDS_and_HIP_catalogs(char *WDS_catalog, 
                                        char *HIC_catalog, char *HIP_catalog, 
-                                       char *discov_name, char *wds_name, 
+                                       char *discov_name, char *comp_name, 
+                                       char *wds_name, 
                                        double *V_mag, double *B_V_index,
                                        double *paral, double *err_paral,
                                        double *magV_A, double *magV_B,
@@ -423,7 +452,7 @@ char WDS_name[40], HIP_name[40], CCDM_name[40];
 char *pc, buffer[128];
 double alpha_wds, delta_wds, equinox_wds, D_tolerance;
 double WdsLastYear, WdsLastRho, WdsLastTheta;
-int found, is_OK, has_an_orbit, status;
+int found, is_OK, status;
 
 wds_name[0] = '\0';
 spectral_type[0] = '\0';
@@ -437,23 +466,23 @@ spectral_type[0] = '\0';
 *found_in_Hip_cat = 0;
 
 /* Search for WDS number in WDS catalog using discov_name */
-get_data_from_WDS_catalog(WDS_catalog, discov_name, wds_name, &WdsLastYear,
+get_data_from_WDS_catalog(WDS_catalog, discov_name, comp_name,
+                          wds_name, &WdsLastYear,
                           &WdsLastRho, &WdsLastTheta, magV_A, magV_B,
-                          spectral_type, &has_an_orbit, 
-                          found_in_WDS);
+                          spectral_type, found_in_WDS);
 
 if(*found_in_WDS != 0) {
  read_coordinates_from_WDS_catalog(wds_name, WDS_catalog, &alpha_wds, 
                                    &delta_wds, &equinox_wds, &found);
  if(found != 1) {
-   fprintf(stderr, "get_data_from_WDS_and_HIP_catalogs/Error: corrds. of %s not found\n",
+   fprintf(stderr, "get_data_from_WDS_and_HIP_catalogs/Error: coorrds. of %s not found\n",
           wds_name);
    exit(-1);
    }
 
 #ifdef DEBUG
-printf("get_data_from_WDS_and_HIP_catalogs/discov_name=%s wds_name=%s alpha_wds=%f delta_wds=%f equinox_wds=%f\n",
-       discov_name, wds_name, alpha_wds, delta_wds, equinox_wds);
+printf("get_data_from_WDS_and_HIP_catalogs/discov_name=%s comp_name=%s wds_name=%s alpha_wds=%f delta_wds=%f equinox_wds=%f\n",
+       discov_name, comp_name, wds_name, alpha_wds, delta_wds, equinox_wds);
 #endif
 
 /* Search for WDS number in HIPHIP//HDS/WDS cross-file
@@ -477,10 +506,15 @@ printf("get_data_from_WDS_and_HIP_catalogs/discov_name=%s wds_name=%s alpha_wds=
                                  equinox_wds, HIP_name, CCDM_name,
                                  V_mag, B_V_index, D_tolerance,
                                  found_in_Hip_cat);
+#ifdef DEBUG
+    printf("get_data_from_WDS_and_HIP_catalogs/DEBUG found_in_Hip_cat=%d\n",
+            found_in_Hip_cat);
+#endif
+
     if(*found_in_Hip_cat) {
 #ifdef DEBUG
-    printf("%s=%s was found in Hipparcos catalog (=HIP%s=CCDM%s)\n",
-            discov_name, wds_name, HIP_name, CCDM_name);
+    printf("%s%s=%s was found in Hipparcos catalog (=HIP%s=CCDM%s)\n",
+            discov_name, comp_name, wds_name, HIP_name, CCDM_name);
     printf("V=%.3f B-V=%.3f\n", *V_mag, *B_V_index);
 #endif
     read_data_in_HIP_catalog(HIP_catalog, HIP_name, paral, err_paral,
@@ -496,7 +530,7 @@ printf("get_data_from_WDS_and_HIP_catalogs/discov_name=%s wds_name=%s alpha_wds=
  // EOF if found_in_HIP_cat
 #ifdef DEBUG
     } else {
-      printf("ZZZ/discov_name=%s not found in HIC catalog!\n",
+      printf("discov_name=%s not found in HIC catalog!\n",
               discov_name);
 #endif
     }

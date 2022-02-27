@@ -2,7 +2,7 @@
 * "modif_calib_table1.c"
 *
 * To modify the old formatted tables (MerI, MerII, MerIII, ... MerVI)
-* by suppressing orbity column (11th column)
+* by suppressing orbit column (11th column)
 *
 * JLP 
 * Version 05/03/2020

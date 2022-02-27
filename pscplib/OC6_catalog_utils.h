@@ -36,7 +36,7 @@ int get_orbit_from_OC6_list_gili(char *in_line, int iline, int is_master_file,
                        double *Omega_node, double *omega_peri, double *i_incl, 
                        double *e_eccent, double *T_periastron, double *Period, 
                        double *a_smaxis, double *mean_motion, 
-                       double *orbit_equinox);
+                       double *orbit_equinox, int *orbit_grade);
 int line_extraction_from_OC6_catalog_gili(char *OC6_fname, int is_master_file,
                                      char *discov_name, char *comp_name, 
                                      FILE *fp_out, int *found, 
@@ -48,7 +48,7 @@ int get_orbit_from_OC6_list(char *in_line, int iline, int is_master_file,
                        double *Omega_node, double *omega_peri, double *i_incl, 
                        double *e_eccent, double *T_periastron, double *Period, 
                        double *a_smaxis, double *mean_motion, 
-                       double *orbit_equinox);
+                       double *orbit_equinox, int *orbit_grade);
 int line_extraction_from_OC6_catalog(char *OC6_fname, int is_master_file,
                                      char *ads_name, char *discov_name,
                                      char *comp_name, FILE *fp_out, int *found, 

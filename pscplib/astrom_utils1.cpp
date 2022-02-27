@@ -14,6 +14,7 @@ $\sigma_\theta$ & comments \\
 \hline % -----------------------------------------------------------------------
 %%
 16564+6502 = STF 2118 AB & ADS 10279 & 2004. & & & & & & & orb \\
+or 16564+6502 = STF 2118 AB & 2004. & & & & & & & \\ (gili's format, old_Gdpisco_fmt=1)
 %%
 %% 090904_ads10279_Vd_a
 %% Thresholds: -1,8
@@ -43,17 +44,19 @@ LQ=3        (Quadrant with long integration)
 #include "astrom_utils1.h" 
 #include "jlp_numeric.h" // JLP_QSORT, MINI, MAXI, PI, etc
 #include "jlp_fitsio.h" // JLP_besselian_epoch 
+#include "jlp_string.h"
 
 /*
 #define DEBUG
 */
 
 /*
-int astrom_read_object_data_for_wds_or_ads(char *b_data, char *wds_name, 
-                            char *discov_name, char *ads_name, int *orbit, 
-                            double *WR, double *WT, double *WY, int i_notes);
+int astrom_read_new_object_line_for_wds_or_ads(char *b_data, char *wds_name, 
+                            char *discov_name, char *ads_name, 
+                            double *WR, double *WT, double *WY, int i_notes,
+                            int in_astrom_fmt);
 int astrom_read_object_data_for_name_only(char *b_data, char *star_name,  
-                            int *epoch_year);
+                            int *epoch_year, int in_astrom_fmt);
 int astrom_check_measure(char *b_data, int i_eyepiece, int i_rho, 
                          int i_drho, int i_theta, int i_dtheta);
 int astrom_calibrate_measures(OBJECT *obj, int nobj,  double *calib_scale1,
@@ -67,16 +70,22 @@ int astrom_add_new_measure(char *b_data, OBJECT *obj, int i_obj, int i_filename,
                            int i_date, int i_filter, int i_eyepiece, int i_rho,
                            int i_drho, int i_theta, int i_dtheta, int i_notes,
                            int comments_wanted);
+int astrom_read_new_measure(char *b_data, int i_filename, int i_date, 
+                            int i_filter, int i_eyepiece, int i_rho, int i_drho,                            int i_theta, int i_dtheta, int i_notes, 
+                            char *filename2, char *notes2, double *epoch2, 
+                            char *filter2, int *eyepiece2, double *rho2, 
+                            double *err_rho2, double *theta2,
+                            double *err_theta2);
 int astrom_decode_data(char *b_data, char *date, double *epoch, double *rho, 
                        double *drho, double *theta, double *dtheta, 
                        int *eyepiece, int i_date, int i_eyepiece, int i_rho, 
                        int i_drho, int i_theta, int i_dtheta);
 int latex_read_ivalue(char *b_data, int *value, int icol);
-int latex_read_fvalue(char *b_data, double *value, int icol, int iverbose); 
+int latex_read_dvalue(char *b_data, double *value, int icol, int iverbose); 
 int latex_read_svalue(char *b_data, char *value, int icol); 
 int astrom_compute_epoch_value(char *b_data, char *date, double *epoch,
                                int icol);
-int latex_write_fvalue(char *b_data, char *b_out, double value, int icol, 
+int latex_write_dvalue(char *b_data, char *b_out, double value, int icol, 
                        int nber_of_decimals);
 int astrom_read_WDS_CHARA(char *notes, double *WR, double *WT, double * WY);
 int astrom_read_quadrant_Q(char *notes, int *quadrant, int *dquadrant,
@@ -105,18 +114,23 @@ HO 295 AB & ADS 16138 & 2004. & & & & & & & orb \\
 *
 * INPUT:
 * i_notes: column nber containing the notes
+* in_astrom_fmt : =1 (gili_format) if empty ADS column, no orb info
+* 22388+4419 = HO 295 AB &  & 2004. & & & & & & & \\
+*                 =2 (calern_format) if no ADS column, no orb info
+* 22388+4419 = HO 295 AB & 2004. & & & & & & & \\
 *************************************************************************/
-int astrom_read_object_data_for_wds_or_ads(char *b_data, 
-                            char *wds_name, char *discov_name,
-                            char *ads_name, int *orbit, double *WR, double *WT, 
-                            double *WY, int i_notes)
+int astrom_read_new_object_line_for_wds_or_ads(char *b_data, 
+                            char *wds_name, char *discov_name, char *comp_name,
+                            char *ads_name, double *WR, double *WT, 
+                            double *WY, int i_notes, int in_astrom_fmt)
 {
 char *pc, buff[60];
-int istat, WDS_status, ADS_status, icol, ncol;
+int istat, WDS_status, ADS_status, icol, ncol, new_object_line = 0;
 WDS_status = 1;
 ADS_status = 1;
 ads_name[0] = '\0';
 discov_name[0] = '\0';
+comp_name[0] = '\0';
 wds_name[0] = '\0';
 
 /* 2009/NEW/Preliminary step: check is syntax is OK: */
@@ -126,12 +140,42 @@ while(*pc) {
  if(*pc == '&') ncol++;
  pc++;
  }
-if(ncol != 10) {
-  fprintf(stderr, "read_object_data/Bad syntax in following line:\n %s\n", b_data); 
-  fprintf(stderr, "read_object_data/Fatal error ncol=%d (should be 10!)\n", 
-          ncol);
+// DEBUG printf("in_astrom_fmt=%d ncol=%d\n", in_astrom_fmt, ncol);
+/*
+* in_astrom_fmt : =1 if gili's format (empty ADS column, no orb info)
+*                 =2 if gili's format (no ADS column, no orb info)
+* Gili's format:
+* 14595+1753 = COU188 &  & 2013 & & & & & & & WY=2010 WT=227 WR=0.3 \\
+* Calern format:
+* 00226+5417 = A907   & 2017    & & & & & & & WY=2016 WT=211 WR=0.8 \\
+*/
+// & cou188\_a & 05/06/2013 &  & 1 & 3.50 & 0.10 & -43.21 & 0.6 & EP=2013.4292 Q=3 \\
+
+// JLP 2021: now format has been changed and gili's format is ok with 10 columns
+ new_object_line = 0;
+ if(in_astrom_fmt == 1) {
+  if((ncol == 10) && (b_data[0] != '&')) { 
+     new_object_line = 1; 
+   } else {
+#ifdef DEBUG
+  fprintf(stderr, "read_new_object_line/Bad new object syntax in following line:\n %s\n", b_data); 
+  fprintf(stderr, "read_new_object_line/Error ncol=%d (all lines should have 10 columns!), in_astrom_fmt=%d\n", 
+          ncol, in_astrom_fmt);
+#endif
   return(-1); 
   }
+ } else {
+  if(ncol == 9) { 
+     new_object_line = 1; 
+   } else {
+#ifdef DEBUG
+  fprintf(stderr, "read_new_object_line/Bad new object syntax in following line:\n %s\n", b_data); 
+  fprintf(stderr, "read_new_object_line/Error ncol=%d (should be 9 for new object, 10 for measures !), in_astrom_fmt=%d\n", 
+          ncol, in_astrom_fmt);
+#endif
+   return(-1); 
+  }
+ }
 
 /* First step: decodes WDS name (not available for 2004a and 2004b...): */
 icol = 1;
@@ -141,7 +185,7 @@ istat = latex_read_svalue(b_data, buff, icol);
 if(!istat && *buff) {
 pc = buff;
 buff[59]='\0';
-/* Look for the second item (discov name) starting after a "=" symbol: */
+/* Look for the second item (discov_name) starting after a "=" symbol: */
 while(*pc && *pc != '=') pc++;
   if(*pc == '=') {
   pc++;
@@ -157,11 +201,17 @@ if(!WDS_status) {
     *pc = '\0';
     strcpy(wds_name, buff);
     WDS_status = 0;
-    *orbit = 0;
     }
 }
 
+ ADS_status = 0;
 /* Reads ADS name in 2nd column: */
+if(in_astrom_fmt == 1) {
+ ADS_status = 0;
+ strcpy(ads_name, "");
+/* Stop here if no discover's name was found either: */
+ if(WDS_status) return(2);
+} else {
 icol = 2;
 ads_name[0] = '\0';
 istat = latex_read_svalue(b_data, buff, icol); 
@@ -176,19 +226,10 @@ if(!istat){
  else {
    strcpy(ads_name,"\\nodata");
 /* Stop here if no discover's name was found either: */
-   if(WDS_status) return(-1);
+   if(WDS_status) return(3);
   }
  }
-
-/* Then tries to read "orb" in column notes: */
-istat = latex_read_svalue(b_data, buff, i_notes); 
-if(!istat) { 
-   pc = buff; 
-   while(*pc && *pc != 'o') pc++;
-   if(*pc == 'o') {
-     if(!strncmp(pc,"orb",3)) *orbit = 1;
-     }
-   }
+}
 
 /* Read WR, WT and WY values if present */
    latex_read_svalue(b_data, buff, i_notes);
@@ -196,6 +237,7 @@ if(!istat) {
    astrom_read_WDS_CHARA(buff, WR, WT, WY);
 
 } /* EOF !status case */
+
 return(ADS_status);
 }
 /*************************************************************************
@@ -206,37 +248,97 @@ or:
 *
 * INPUT:
 *  b_data
+*  in_astrom_fmt: flag set to 1 if gili's format (no ADS column and no orb info)
 *
 * OUTPUT:
-*  star_name, epoch_year
+*  discov_name, comp_name, epoch_year
 *************************************************************************/
-int astrom_read_object_data_for_name_only(char *b_data, char *star_name,
-                            int *epoch_year)
+int astrom_read_object_data_for_name_only(char *b_data, char *discov_name,
+                                          char *comp_name, double *epoch_year,
+                                          int in_astrom_fmt)
 {
 int status = -1, ival;
-char *pc, buff[60];
+char *pc, buff[60], full_name[64];
 int istat, star_name_status, icol;
 
 star_name_status = 1;
-star_name[0] = '\0';
+discov_name[0] = '\0';
+comp_name[0] = '\0';
 *epoch_year = 0.;
 
-/* Reads object name in 2nd column: */
+/* Read discov_name in 2nd column: */
 icol = 2;
 istat = latex_read_svalue(b_data, buff, icol); 
-if(!istat && (buff[0] != '\0')){
+if((istat == 0) && (buff[0] != '\0')){
  star_name_status = 0;
- strcpy(star_name, buff);
- }
+ strcpy(full_name, buff);
 
-/* Then tries to read epoch_year in 3rd column: */
-icol = 3;
-istat = latex_read_ivalue(b_data, &ival, icol); 
-if(!istat){
- *epoch_year = ival;
+/* Then try to read epoch_year in 3rd column: */
+  star_name_status = -1;
+  icol = 3;
+  istat = latex_read_ivalue(b_data, &ival, icol); 
+  if(istat == 0){
+    if((ival > 2000) && (ival < 2050)) {
+      star_name_status = 0;
+      *epoch_year = (double)ival;
+    }
+  }
+}
+
+// Split discov_name and comp_name:
+if(star_name_status == 0) {
+ jlp_split_discov_comp(full_name, 64, discov_name, comp_name);
  }
 
 return(star_name_status);
+}
+/*************************************************************************
+*
+* Example: COU1142, A231AB, HSL1Aa,Ac
+*************************************************************************/
+int jlp_split_discov_comp(char *full_name, int fname_length,
+                         char *discov_name, char *comp_name)
+{
+char *pc;
+
+comp_name[0] = '\0';
+
+/* Remove all the blanks: */
+  jlp_compact_string(full_name, fname_length);
+
+// copy to discov_name for output:
+strcpy(discov_name, full_name);
+
+// First scan the letters
+pc = discov_name;
+while(*pc) {
+  if(isalpha(*pc) != 0) 
+    pc++;
+  else 
+    break;
+  }
+
+// Then scan the numbers: 
+while(*pc) {
+  if(isdigit(*pc) != 0) 
+    pc++;
+  else 
+    break;
+  }
+
+// copy to comp_name for output:
+if(*pc) {
+ strcpy(comp_name, pc);
+ }
+
+// Cut here the string for discov_name:
+*pc = '\0';
+
+/* DEBUG
+printf("full=%s< disc=%s< comp=%s<\n", full_name, discov_name, comp_name);
+*/
+
+return(0);
 }
 /*************************************************************************
 * Check whether input line is a measurement
@@ -257,11 +359,11 @@ int status;
 double ww; 
 int iverbose = 0;
 
-status = latex_read_fvalue(b_data, &ww, i_rho, iverbose); 
-if(!status) status = latex_read_fvalue(b_data, &ww, i_drho, iverbose); 
-if(!status) status = latex_read_fvalue(b_data, &ww, i_theta, iverbose); 
-if(!status) status = latex_read_fvalue(b_data, &ww, i_dtheta, iverbose); 
-if(!status) status = latex_read_fvalue(b_data, &ww, i_eyepiece, iverbose); 
+status = latex_read_dvalue(b_data, &ww, i_rho, iverbose); 
+if(!status) status = latex_read_dvalue(b_data, &ww, i_drho, iverbose); 
+if(!status) status = latex_read_dvalue(b_data, &ww, i_theta, iverbose); 
+if(!status) status = latex_read_dvalue(b_data, &ww, i_dtheta, iverbose); 
+if(!status) status = latex_read_dvalue(b_data, &ww, i_eyepiece, iverbose); 
 
 return(status);
 }
@@ -276,10 +378,9 @@ return(status);
 * i_theta: column nber with theta values
 * i_dtheta: column nber with dtheta values
 * wds_name, discov_name, ads_name : object designation in various catalogues  
-* orbit: flag, set to one if orbit is known, 0 otherwise
 *
 * OUPUT:
-* obj.measure updated with calibrated values
+* obj.meas updated with calibrated values
 *************************************************************************/
 int astrom_calibrate_measures(OBJECT *obj, int nobj,  double *calib_scale1,
                               int *calib_eyepiece1, int n_eyepieces1,
@@ -293,7 +394,7 @@ register int i, j, k;
 for(i = 0; i < nobj; i++) {
   nm = (obj[i]).nmeas;
   for(j = 0; j < nm; j++) {
-    me = &(obj[i]).measure[j];
+    me = &(obj[i]).meas[j];
 
 /* Scale according to eyepiece: */
     switch(me->eyepiece) {
@@ -360,7 +461,6 @@ return(0);
 * i_theta: column nber with theta values
 * i_dtheta: column nber with dtheta values
 * wds_name, discov_name, ads_name : object designation in various catalogues  
-* orbit: flag, set to one if orbit is known, 0 otherwise
 *
 * OUTPUT:
 * b_out: line with calibrated measurement
@@ -381,6 +481,7 @@ char date[30];
  status = astrom_decode_data(b_data, date, &epoch, &rho, &drho, &theta, 
                              &dtheta, &eyepiece, i_date, i_eyepiece, i_rho, 
                              i_drho, i_theta, i_dtheta);
+// If not a good line with measurements, return from here
  if(status) {
   return(status);
   }
@@ -398,26 +499,26 @@ if(rho != NO_DATA) {
  dtheta = dtheta;
 
 /* rho and drho with 3 decimals */
-status = latex_write_fvalue(b_data, b_out, rho, i_rho, 3); 
+status = latex_write_dvalue(b_data, b_out, rho, i_rho, 3); 
 if(!status) {
    strcpy(b_data, b_out);
-   status = latex_write_fvalue(b_data, b_out, drho, i_drho, 3); 
+   status = latex_write_dvalue(b_data, b_out, drho, i_drho, 3); 
    }
 /* theta and dtheta with 1 decimal */
 if(!status) {
    strcpy(b_data, b_out);
-   status = latex_write_fvalue(b_data, b_out, theta, i_theta, 1); 
+   status = latex_write_dvalue(b_data, b_out, theta, i_theta, 1); 
    }
 if(!status) {
    strcpy(b_data, b_out);
-   status = latex_write_fvalue(b_data, b_out, dtheta, i_dtheta, 1); 
+   status = latex_write_dvalue(b_data, b_out, dtheta, i_dtheta, 1); 
    }
 } /* EOF !NO_DATA */
 
 /* epoch with 3 decimals (October 2008)*/
 if((epoch > 0) && (!status)) {
    strcpy(b_data, b_out);
-   status = latex_write_fvalue(b_data, b_out, epoch, i_date, 3); 
+   status = latex_write_dvalue(b_data, b_out, epoch, i_date, 3); 
    }
 if(status) {
  printf("calib_data/Fatal error, updating array!\n");
@@ -451,16 +552,16 @@ int astrom_add_new_measure(char *b_data, OBJECT *obj, int i_obj,
 MEASURE *me;
 double epoch, rho, drho, theta, dtheta, ww, exact_epoch;
 double dmag, ddmag;
-char notes[80], filter[20], date[40], filename[60], *pc;
+char notes[80], filter[20], date[40], filename[60], nd_string[16], *pc;
 int eyepiece, quadrant, dquadrant, status, nm;
-int iverbose = 0;
+int iverbose = 0, is_newdouble = 0;
 
 /* Return if no object has been entered yet: */
 if(i_obj < 0) return(-1);
 
 #ifdef DEBUG
-printf("astrom_add_new_measure/add new measure from %s (i=%d) nm=%d\n", 
-       (obj[i_obj]).name, i_obj, (obj[i_obj]).nmeas);
+printf("astrom_add_new_measure/add new measure from discov_name=%s (i=%d) nm=%d\n", 
+       (obj[i_obj]).discov_name, i_obj, (obj[i_obj]).nmeas);
 #endif
 
 eyepiece = 0;
@@ -484,14 +585,14 @@ printf("compute epoch with date: epoch=%.2f i_date=%d, status=%d\n",
         epoch, i_date, status);
 #endif
 
-status = latex_read_fvalue(b_data, &rho, i_rho, iverbose); 
+status = latex_read_dvalue(b_data, &rho, i_rho, iverbose); 
 #ifdef DEBUG
 printf("rho=%.2f i_rho=%d, status=%d\n", rho, i_rho, status);
 #endif
-status = latex_read_fvalue(b_data, &drho, i_drho, iverbose); 
-status = latex_read_fvalue(b_data, &theta, i_theta, iverbose); 
-status = latex_read_fvalue(b_data, &dtheta, i_dtheta, iverbose); 
-status = latex_read_fvalue(b_data, &ww, i_eyepiece, iverbose); 
+status = latex_read_dvalue(b_data, &drho, i_drho, iverbose); 
+status = latex_read_dvalue(b_data, &theta, i_theta, iverbose); 
+status = latex_read_dvalue(b_data, &dtheta, i_dtheta, iverbose); 
+status = latex_read_dvalue(b_data, &ww, i_eyepiece, iverbose); 
 if(status == 0) eyepiece = (int)(ww+0.5);
 
 /* Read non-compulsory parameters */
@@ -517,20 +618,19 @@ if(status == 0) eyepiece = (int)(ww+0.5);
    status = latex_read_svalue(b_data, notes, i_notes);
 
 /* Check if EP= is available in the notes: */
-   astrom_read_epoch_from_notes(notes, &exact_epoch, comments_wanted);
-   if(exact_epoch != -1) {
-     ww = ABS(exact_epoch - epoch);
-     if(ww > 1./365.25) {
-       printf("Fatal error/inconsistent epoch in the comments\n");
-       printf("%s \n epoch=%f exact_epoch=%f\n", b_data, epoch, exact_epoch);
-       printf(" Delta epoch : %.4f (year) or %.2f (days)\n", ww, ww*365.25);
-       return(-1);
-       }
-     else  
-       epoch = exact_epoch;
-     }
+   status = astrom_read_epoch_from_notes(notes, &exact_epoch, comments_wanted);
+   if(status == 0) epoch = exact_epoch;
+     
 /* Check if Dm= is available in the notes: */
    astrom_read_dmag_from_notes(notes, &dmag, &ddmag, comments_wanted);
+
+/* Check if ND is present in the notes: */
+   strcpy(nd_string, "ND");
+   if(strstr(notes, nd_string) != NULL) 
+     is_newdouble = 1;
+   else
+     is_newdouble = 0;
+//   printf(" notes=%s nd_string=%s new_double=%d \n", notes, nd_string, is_newdouble);
 
 /* Read the quadrant value if present, and 
 * removes "Q=" from notes if comments_wanted == 0 */
@@ -551,7 +651,7 @@ if(!status) {
               i_obj, nm, NMEAS, filename); 
       exit(-1);
       }
-   me = &(obj[i_obj]).measure[nm];
+   me = &(obj[i_obj]).meas[nm];
 
    me->rho = rho; 
 /* Minimum value for rho error: 0.1 pixel or 0.5% */
@@ -563,6 +663,7 @@ if(!status) {
    me->quadrant = quadrant; 
    me->dquadrant = dquadrant; 
    me->dmag = dmag; 
+   me->is_new_double = is_newdouble;
    me->flagged_out = 0;
    me->eyepiece = eyepiece; 
    me->epoch = epoch; 
@@ -587,6 +688,112 @@ if(!status) {
 else
   printf("add_new_measure/Failure adding new measurement \n");
 #endif
+
+return(status);
+}
+/**************************************************************************
+* Read a new measure 
+*
+* INPUT:
+* i_obj: index of current object in OBJECT *obj
+* i_eyepiece: column nber of eyepiece focal length information
+* i_rho: column nber with rho values
+* i_drho: column nber with drho values
+* i_theta: column nber with theta values
+* i_dtheta: column nber with dtheta values
+*
+* OUTPUT:
+*   filename2, notes2
+*   epoch2, filter2, eyepiece2
+*   rho2, drho2, theta2, dtheta2
+*
+**************************************************************************/
+int astrom_read_new_measure(char *b_data, int i_filename, int i_date, 
+                            int i_filter, int i_eyepiece, int i_rho, int i_drho,                            int i_theta, int i_dtheta, int i_notes, 
+                            char *filename2, char *notes2, double *epoch2, 
+                            char *filter2, int *eyepiece2, double *rho2, 
+                            double *drho2, double *theta2, double *dtheta2)
+{
+int comments_wanted2 = 1;
+double ww, exact_epoch2, dmag2, ddmag2;
+char date2[40], *pc;
+int quadrant2, dquadrant2, status, nm, iverbose = 0;
+
+*eyepiece2 = 0;
+quadrant2 = 0;
+dquadrant2 = 0;
+*rho2 = NO_DATA;
+*drho2 = NO_DATA;
+*theta2 = NO_DATA;
+*dtheta2 = NO_DATA;
+*epoch2 = -1.;
+dmag2 = -1;
+ddmag2 = 0.;
+filter2[0] = '\0';
+notes2[0] = '\0';
+
+/* Read date and compute epoch: */
+status = astrom_compute_epoch_value(b_data, date2, epoch2, i_date); 
+#ifdef DEBUG
+printf("compute epoch with date: epoch=%.2f i_date=%d, status=%d\n", 
+        *epoch2, i_date, status);
+#endif
+
+status = latex_read_dvalue(b_data, rho2, i_rho, iverbose); 
+#ifdef DEBUG
+printf("rho=%.2f i_rho=%d, status=%d\n", *rho2, i_rho, status);
+#endif
+status = latex_read_dvalue(b_data, drho2, i_drho, iverbose); 
+status = latex_read_dvalue(b_data, theta2, i_theta, iverbose); 
+status = latex_read_dvalue(b_data, dtheta2, i_dtheta, iverbose); 
+status = latex_read_dvalue(b_data, &ww, i_eyepiece, iverbose); 
+if(status == 0) *eyepiece2 = (int)(ww+0.5);
+
+/* Read non-compulsory parameters */
+   latex_read_svalue(b_data, filename2, i_filename);
+   latex_read_svalue(b_data, filter2, i_filter);
+/* JLP2008: I change sf to W filter: */
+/* JLP 2008 I remove the first blank characters: */
+   pc = filter2; 
+   while(*pc && *pc == ' ') pc++; 
+   strcpy(filter2, pc);
+/* Conversion to upper case characters (JLP2010) 
+*  e.g., Rl becomes RL
+*/
+   pc = filter2; 
+   while(*pc && isprint(*pc)) {*pc = toupper(*pc); pc++;} 
+   *pc = '\0';
+   if(!strncmp(filter2,"SF",2)) {
+/*
+     printf("******** filter sf changed to >%s< \n",filter2);
+*/
+     strcpy(filter2, "W");
+     } 
+   status = latex_read_svalue(b_data, notes2, i_notes);
+
+/* Check if EP= is available in the notes: */
+   status = astrom_read_epoch_from_notes(notes2, &exact_epoch2, comments_wanted2);
+   if(status == 0) *epoch2 = exact_epoch2;
+
+/* Check if Dm= is available in the notes: */
+   astrom_read_dmag_from_notes(notes2, &dmag2, &ddmag2, comments_wanted2);
+
+/* Read the quadrant value if present, and 
+* removes "Q=" from notes if comments_wanted == 0 */
+   astrom_read_quadrant_Q(notes2, &quadrant2, &dquadrant2, comments_wanted2);
+/* 2008: attempt with LQ if problem with Q: */
+/*
+Q=2         (Quadrant with restricted triple-correplation)
+LQ=3        (Quadrant with long integration)
+*/
+   if(quadrant2 == -1 || dquadrant2 == 1) 
+      astrom_read_quadrant_LQ(notes2, &quadrant2, &dquadrant2, comments_wanted2);
+
+/* Minimum value for rho error: 0.1 pixel or 0.5% */
+   *drho2 = MAXI(*drho2, 0.1); 
+   *drho2 = MAXI(*drho2, (*rho2)*0.005); 
+/* Minimum value for theta error: 0.3 degree */
+   *dtheta2 = MAXI(*dtheta2, 0.3); 
 
 return(status);
 }
@@ -627,8 +834,10 @@ while(*pc) {
  }
 if(ncol != 10) {
   fprintf(stderr, "astrom_decode_data/Bad syntax in the following line:\n %s\n", b_data); 
-  fprintf(stderr, "astrom_decode_data/Fatal error ncol=%d (should be 10!)\n", 
+  fprintf(stderr, "astrom_decode_data/Error ncol=%d (should be 10!)\n", 
           ncol);
+  fprintf(stderr, "i_date=%d i_eyepiece=%d i_rho=%d i_drho=%d i_theta=%d i_dtheta=%d\n", i_date, i_eyepiece, i_rho, i_drho, i_theta, i_dtheta); 
+  fprintf(stderr, "line: %s\n", b_data); 
   return(-1); 
   }
 
@@ -639,12 +848,12 @@ if(ncol != 10) {
 *epoch = 0.;
 status = astrom_compute_epoch_value(b_data, date, epoch, i_date); 
 
-status = latex_read_fvalue(b_data, rho, i_rho, iverbose); 
-if(!status) status = latex_read_fvalue(b_data, drho, i_drho, iverbose); 
-if(!status) status = latex_read_fvalue(b_data, theta, i_theta, iverbose); 
-if(!status) status = latex_read_fvalue(b_data, dtheta, i_dtheta, iverbose); 
+status = latex_read_dvalue(b_data, rho, i_rho, iverbose); 
+if(!status) status = latex_read_dvalue(b_data, drho, i_drho, iverbose); 
+if(!status) status = latex_read_dvalue(b_data, theta, i_theta, iverbose); 
+if(!status) status = latex_read_dvalue(b_data, dtheta, i_dtheta, iverbose); 
 if(!status) {
-  status = latex_read_fvalue(b_data, &ww, i_eyepiece, iverbose); 
+  status = latex_read_dvalue(b_data, &ww, i_eyepiece, iverbose); 
   *eyepiece = (int)(ww+0.5);
   }
 
@@ -683,7 +892,7 @@ return(status);
 * iverbose : (i = 1 verbose if error)
 *           (i > 1 verbose if error and even if no error)
 **************************************************************************/
-int latex_read_fvalue(char *b_data, double *value, int icol, int iverbose) 
+int latex_read_dvalue(char *b_data, double *value, int icol, int iverbose) 
 {
 int ival, status;
 char buff[60], nodata[60];
@@ -693,13 +902,13 @@ status = latex_read_svalue(b_data, buff, icol);
 if(!status) { 
    sscanf(buff, "%s", nodata);
    if(!strncmp(nodata,"\\nodata",7)) { 
-     if(iverbose >= 1) printf("latex_read_fvalue: nodata found! \n");
+     if(iverbose >= 1) printf("latex_read_dvalue: nodata found! \n");
      *value = NO_DATA;
      }
    else {
    ival = sscanf(buff, "%lf", value);
    if(ival <= 0) { 
-      if(iverbose > 1) printf("latex_read_fvalue/buff=>%s< value=%.2f ival=%d\n", buff, *value, ival);
+      if(iverbose > 1) printf("latex_read_dvalue/buff=>%s< value=%.2f ival=%d\n", buff, *value, ival);
       status = 1;
       }
    }
@@ -820,7 +1029,7 @@ return(status);
 * b_out: updated value of the line b_data with the input value in Col.#icol
 *
 **************************************************************************/
-int latex_write_fvalue(char *b_data, char *b_out, double value, int icol, 
+int latex_write_dvalue(char *b_data, char *b_out, double value, int icol, 
                        int nber_of_decimals) 
 {
 int ic, column_is_found, istart, iend;
@@ -903,7 +1112,8 @@ if(nobj > 10000)
 /* When length = 1, sort elements according to first letter only */
 length = 60;
 
-for(j = 0; j < 60 * nobj; j++) strcpy(&buffer[j*60], obj[j].name);
+for(j = 0; j < nobj; j++) 
+  sprintf(&buffer[j*60], "%s%s", obj[j].discov_name, obj[j].comp_name);
 
 /* Sort "buffer" array by alphabetic order: */
 JLP_QSORT_INDX_CHAR(buffer, &length, index_obj, &nobj);
@@ -1215,7 +1425,7 @@ nbad_quad = 0;
 for(i = 0; i < nobj; i++) {
  nm = (obj[i]).nmeas;
    for(j = 0; j < nm; j++) {
-   me = &(obj[i]).measure[j];
+   me = &(obj[i]).meas[j];
      if(!me->flagged_out) {
      nmeas ++;
      no_data = ((me->rho == NO_DATA) || (me->theta == NO_DATA)) ? 1 : 0; 
@@ -1232,8 +1442,9 @@ for(i = 0; i < nobj; i++) {
 /* Check if difference is not too large: */
         if(delta_theta > 90.) {
           nbad_quad ++;
-          fprintf(fp_out,"Inconsistent quadrant for %s/%s %s (Q=%d, mtheta=%.1f WT=%.1f Dt=%.1f WY=%d)\n",
-                (obj[i]).wds, (obj[i]).name, me->filename, me->quadrant, me->theta, 
+          fprintf(fp_out,"Inconsistent quadrant for %s/%s%s %s (Q=%d, mtheta=%.1f WT=%.1f Dt=%.1f WY=%d)\n",
+                (obj[i]).wds, (obj[i]).discov_name, (obj[i]).comp_name, 
+                me->filename, me->quadrant, me->theta, 
                 (obj[i]).WT, delta_theta, (int)(obj[i]).WY);
           }
        }
@@ -1243,8 +1454,9 @@ for(i = 0; i < nobj; i++) {
         delta_rho = me->rho - (obj[i]).WR;
         delta_rho = ABS(delta_rho) / me->rho;
         if(delta_rho > 0.5) {
-        fprintf(fp_out,"Inconsistent rho for %s/%s (mrho=%.2f WR=%.2f Dr/r=%.2f WY=%d)\n",
-                (obj[i]).wds, (obj[i]).name, me->rho, (obj[i]).WR, delta_rho, (int)(obj[i]).WY);
+        fprintf(fp_out,"Inconsistent rho for %s/%s%s (mrho=%.2f WR=%.2f Dr/r=%.2f WY=%d)\n",
+                (obj[i]).wds, (obj[i]).discov_name, (obj[i]).comp_name, 
+                me->rho, (obj[i]).WR, delta_rho, (int)(obj[i]).WY);
          }
         }
      } // !me->flagged_out
@@ -1513,7 +1725,7 @@ while(*pc) {
 /* Then check that there is a date in the 3rd column: */
 icol = 3;
 year = 0.;
-istat = latex_read_fvalue(b_in, &year, icol, iverbose); 
+istat = latex_read_dvalue(b_in, &year, icol, iverbose); 
 if(!istat && year > 2000. && year < 2020.){
   *contains_object_name = 1;
   }

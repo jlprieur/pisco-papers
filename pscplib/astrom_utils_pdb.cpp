@@ -1,11 +1,11 @@
 /*************************************************************************
-* astrom_utils_pdb.c
+* astrom_utils_pdb.cpp
 * JLP
-* Version 02/05/2018
+* Version 20/09/2020
 *************************************************************************/
 #include "ctype.h"            /* isdigit() */
 #include "string.h"            /* strcpy() */
-#include "astrom_utils1.h"
+#include "astrom_utils1.h"    // astrom_read_object_data_for_name_only()
 #include "astrom_utils2.h"
 #include "jlp_catalog_utils.h" /* get_data_from_PISCO_catalog */
 #include "WDS_catalog_utils.h" /* get_data_from_WDS_catalog */
@@ -13,6 +13,9 @@
 #include "jlp_numeric.h" // JLP_QSORT, MINI, MAXI, PI, etc
 #include "jlp_string.h"
 
+#include "astrom_utils_pdb.h"
+/*
+int astrom_add_WDS_from_discov(FILE *fp_in, FILE *fp_out, char *WDS_catalog);
 int astrom_add_discov_and_WDS(FILE *fp_in, FILE *fp_out, char *WDS_catalog, 
                               char *ADS_WDS_cross);
 int astrom_decode_new_object_name(char *b_in, char *ads_name, 
@@ -23,14 +26,116 @@ int get_discov_from_ads_wds_crossref(char *ADS_WDS_cross, char *ads_name1,
                                      char *wds_name1);
 int get_ads_from_ads_wds_crossref(char *ADS_WDS_cross, char *discov_name1,
                                   char *ads_name1);
+*/
+
 /*
 #define DEBUG
 */
 
 /*************************************************************************
+* Scan the astrom file and add various parameters 
+* WDS number,
+* WY, WT, WR (year, theta and rho of the last observation) 
+* are read from WDS catalog
+*
+* INPUT:
+* fp_in: input old astrom file pointer
+* fp_out: output new astrom file pointer
+* WDS_cat: wdsweb_summ.txt (used to obtain the last observations)
+*
+**************************************************************************/
+int astrom_add_WDS_from_discov(FILE *fp_in, FILE *fp_out, char *WDS_catalog) 
+{
+double magV, B_V, paral, err_paral, magV_A, magV_B; 
+double year, WdsLastYear, WdsLastTheta, WdsLastRho, mag_A, mag_B;
+int iline, status, gili_format;
+int found;
+char b_in[256], discov_name[64], wds_name[64], *pc;
+char comp_name[64], spectral_type[64]; 
+
+year = 0.;
+discov_name[0] = '\0';
+wds_name[0] = '\0';
+
+iline = 0;
+while(!feof(fp_in))
+{
+/* Maximum length for a line will be 170 characters: */
+  if(fgets(b_in,170,fp_in))
+  {
+  iline++;
+  b_in[255] = '\0';
+/* Remove ^M (Carriage Return) if present: */
+  pc = b_in;
+  while(*pc) {
+  if(*pc == '\r') *pc = ' ';
+  pc++;
+  }
+ 
+/* Check if input LateX line contains the name of the object:
+*/
+  gili_format = 0;
+  status = astrom_read_object_data_for_name_only(b_in, discov_name, 
+                                                 comp_name, &year,
+                                                 gili_format);
+/* Remove the extra-blanks: */
+  jlp_trim_string(discov_name, 64);
+  jlp_trim_string(comp_name, 64);
+
+  if(status == 0) {
+
+#ifdef DEBUG
+    printf("DEBUG: %s From decode: discov=%s< comp_name=%s< year=%.2f\n", 
+            b_in, discov_name, comp_name, year);
+#endif
+
+/*
+if(comp_name[0] != '\0') printf("DEBUG123: %s comp_name=%s -> ", discov_name, comp_name);
+*/
+
+// Change some companion names:
+  if(!strcmp(comp_name, "ab")) strcpy(comp_name, "AB");
+  if(!strcmp(comp_name, "bc")) strcpy(comp_name, "BC");
+  if(!strcmp(comp_name, "cd")) strcpy(comp_name, "CD");
+  if(!strcmp(comp_name, "ac")) strcpy(comp_name, "AC");
+  if(!strcmp(comp_name, "ab-c")) strcpy(comp_name, "AB-C");
+/*
+if(comp_name[0] != '\0') printf("DEBUG1234/comp_name=%s\n ", comp_name);
+*/
+
+        get_data_from_WDS_catalog(WDS_catalog, discov_name, comp_name,
+                                  wds_name,
+                                  &WdsLastYear, &WdsLastRho, &WdsLastTheta, 
+                                  &mag_A, &mag_B, spectral_type, 
+                                  &found);
+#ifdef DEBUG
+printf("(discov_name=%s< wds_name=>%s< stat=%d)\n", 
+       discov_name, wds_name, status);
+#endif
+         if(found) {
+           sprintf(b_in, "%s = %s%s & %d & & & & & & & WY=%d WT=%d WR=%3.1f \\\\\n",
+                   wds_name, discov_name, comp_name, 
+                   (int)year, (int)WdsLastYear, 
+                   (int)WdsLastTheta, WdsLastRho);
+        } else {
+          fprintf(stderr, "astrom_add_WDS_from_discov/Error: observations not found for: wds=%s disc=%s comp=%s\n",  
+                   wds_name, discov_name, comp_name);
+           sprintf(b_in, "%s = %s%s & & & & & & & \\\\\n",
+                   wds_name, discov_name, comp_name);
+        } 
+    } /* EOF status == 0 (new object name) */
+
+// Copy current line to file:
+        fputs(b_in, fp_out);
+  } /* EOF if fgets() */
+} /* EOF while loop */
+
+return(0);
+}
+/*************************************************************************
 * Scan the file and add various parameters 
 * WDS number, discoverer's name from WDS catalog
-* has_an_orbit, WY, WT, WR (year, theta and rho of the last observation) 
+* WY, WT, WR (year, theta and rho of the last observation) 
 * are read from WDS catalog
 *
 * INPUT:
@@ -44,11 +149,10 @@ int astrom_add_discov_and_WDS(FILE *fp_in, FILE *fp_out, char *WDS_catalog,
 double magV, B_V, paral, err_paral, magV_A, magV_B; 
 double year, WdsLastYear, WdsLastTheta, WdsLastRho, mag_A, mag_B;
 int iline, status;
-int found, ads_nber, has_an_orbit;
-char b_in[256], ads_name[64], discov_name[64], wds_name[64], orb_str[64], *pc;
+int found, ads_nber;
+char b_in[256], ads_name[64], discov_name[64], wds_name[64], *pc;
 char comp_name[64], spectral_type[64]; 
 
-orb_str[0] = '\0';
 year = 0.;
 discov_name[0] = '\0';
 ads_name[0] = '\0';
@@ -82,7 +186,7 @@ while(!feof(fp_in))
   if(status == 0) {
 
 #ifdef DEBUG
-    printf("DDEBUG: %s From decode: ads_name=%s< discov=%s< comp_name=%s< year=%.2f\n", 
+    printf("DEBUG: %s From decode: ads_name=%s< discov=%s< comp_name=%s< year=%.2f\n", 
             b_in, ads_name, discov_name, comp_name, year);
 #endif
 /* Remove the extra-blanks: */
@@ -114,25 +218,23 @@ if(comp_name[0] != '\0') printf("DEBUG123: %s comp_name=%s -> ", discov_name, co
 if(comp_name[0] != '\0') printf("DEBUG1234/comp_name=%s\n ", comp_name);
 */
 
-        get_data_from_WDS_catalog(WDS_catalog, discov_name, wds_name,
+        get_data_from_WDS_catalog(WDS_catalog, discov_name, comp_name,
+                                  wds_name,
                                   &WdsLastYear, &WdsLastRho, &WdsLastTheta, 
                                   &mag_A, &mag_B, spectral_type, 
-                                  &has_an_orbit, &found);
-        if(has_an_orbit) strcpy(orb_str, "orb");
-          else orb_str[0] = '\0';
+                                  &found);
 #ifdef DEBUG
-printf("(ads_name=%s discov_name=%s< wds_name=>%s< orb_str=%s stat=%d)\n", 
-       ads_name, discov_name, wds_name, orb_str, status);
+printf("(ads_name=%s discov_name=%s< wds_name=>%s< stat=%d)\n", 
+       ads_name, discov_name, wds_name, status);
 #endif
          if(found) {
-           sprintf(b_in, "%s = %s%s & %s & %d & & & & & & & %s WY=%d WT=%d WR=%3.1f \\\\\n",
+           sprintf(b_in, "%s = %s%s & %s & %d & & & & & & & WY=%d WT=%d WR=%3.1f \\\\\n",
                    wds_name, discov_name, comp_name, 
-                   ads_name, (int)year, orb_str, (int)WdsLastYear, 
+                   ads_name, (int)year, (int)WdsLastYear, 
                    (int)WdsLastTheta, WdsLastRho);
         } else {
-           sprintf(b_in, "%s = %s%s & %s & %d & & & & & & & %s \\\\\n",
-                   wds_name, discov_name, comp_name, ads_name, (int)year,
-                   orb_str);
+           sprintf(b_in, "%s = %s%s & %s & %d & & & & & & & \\\\\n",
+                   wds_name, discov_name, comp_name, ads_name, (int)year);
         } 
     } /* EOF status == 0 (new object name) */
 
@@ -146,13 +248,13 @@ return(0);
 /*********************************************************************
 * Check if current line is compatible with the syntax of a new object
 * Example:
-* 16564+6502 = STF 2118 AB-C & ADS 10279 & 2004. & & & & & & & orb \\
+* 16564+6502 = STF 2118 AB-C & ADS 10279 & 2004. & & & & & & & \\
 * Or:
 *  & ADS 1079 CD & 2004. & & & & & & & \\
 * Or:
-  COU 2118 AC &  & 2004. & & & & & & & orb \\
+  COU 2118 AC &  & 2004. & & & & & & & \\
 * Or:
-  & COU 2118 A-BC & 2004. & & & & & & & orb \\
+  & COU 2118 A-BC & 2004. & & & & & & & \\
 *
 * return 0 if syntax is OK, and that all the corresponding items in that case.
 *
@@ -172,6 +274,7 @@ int astrom_decode_new_object_name(char *b_in, char *ads_name,
 {
 int ncol, icol, status = -1, iverbose = 0;
 char *pc, *pc1, buffer[256], buff1[256];
+double dval;
 
 ads_name[0] = '\0';
 discov_name[0] = '\0';
@@ -276,9 +379,13 @@ if(discov_name[0] != '\0') {
 /* Then check that there is a date in the 3rd column: */
 icol = 3;
 *year = 0.;
-status = latex_read_fvalue(b_in, year, icol, iverbose);
-if((status == 0) && (*year < 1900. || *year > 2100.)){
-  status = -2;
+status = latex_read_dvalue(b_in, &dval, icol, iverbose);
+if(status == 0){
+  if(dval < 1900. || dval > 2100.){
+    status = -2;
+    } else {
+    *year = dval;
+    }
   }
 
 return(status);

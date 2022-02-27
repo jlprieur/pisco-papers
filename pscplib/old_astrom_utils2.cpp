@@ -5,15 +5,15 @@
 *************************************************************************/
 #include "ctype.h"            /* isdigit() */
 #include "astrom_utils1.h"
-#include "astrom_utils2.h"
 #include "PISCO_catalog_utils.h" /* get_data_from_PISCO_catalog */
 #include "WDS_catalog_utils.h" /* get_data_from_WDS_catalog */
 #include "jlp_fitsio.h"  // get_bessel_epoch_from_fits_file()
 #include "jlp_numeric.h" // JLP_QSORT, MINI, MAXI, PI, etc
 #include "jlp_string.h"    // jlp_trim_string, jlp_compact_string 
 
-#define DEBUG
+#include "astrom_utils2.h" // prototypes defined here
 /*
+#define DEBUG
 */
 int astrom_write_publi_table(FILE *fp_out, int comments_wanted, OBJECT *obj, 
                              int *index_obj, int nobj, int tabular_only);
@@ -94,11 +94,11 @@ return(0);
 }
 /*************************************************************************
 * Scan the file and add various parameters 
-* WDS number, discoverer's name and "orbit" from PISCO catalog
+* WDS number, discoverer's name from PISCO catalog
 * WY, WT, WR (year, theta and rho of the last observation) from WDS catalog
 *
 * INPUT:
-* PISCO_cat: zeiss_doppie_new.cat (used to obtain the WDS names and orbit info.)
+* PISCO_cat: zeiss_doppie_new.cat (used to obtain the WDS names )
 * WDS_cat: wdsweb_summ.txt (used to obtain the last observations)
 *
 **************************************************************************/
@@ -106,11 +106,12 @@ int astrom_add_WDS(FILE *fp_in, FILE *fp_out, char *PISCO_cat, char *WDS_cat)
 {
 double magV, B_V, paral, err_paral, magV_A, magV_B; 
 double year, WdsLastYear, WdsLastTheta, WdsLastRho, mag_A, mag_B;
-int has_an_orbit, iline, contains_object_name, contains_WDS_name, status;
-int found, wds_has_orbit;
+int iline, contains_object_name, contains_WDS_name, status;
+int found;
 char b_in[NMAX], ads_name[40], discov_name[40], *pc;
-char spectral_type[40], discov_name2[40], object_name[40], comp_name[40]; 
-char ads_name2[40], WDS_name2[40], orbit[10], WDS_name3[40];
+char spectral_type[40], discov_name2[40], comp_name2[40];
+char object_name[40], comp_name[40]; 
+char ads_name2[40], WDS_name2[40], WDS_name3[40];
 char NameInPiscoCatalog[40];
 
 iline = 0;
@@ -142,7 +143,7 @@ while(!feof(fp_in))
                                      &year);
 /* Look for object_name in file PISCO_catalog_name ("zeiss_doppie.cat"), 
 * and determine values of: alpha, delat, coord_equinox,
-*                          has_an_orbit, discov_name0, comp_name0.
+*                          discov_name0, comp_name0.
 */
         if(*ads_name) sprintf(object_name, "%s%s", ads_name, comp_name); 
           else sprintf(object_name, "%s%s", discov_name, comp_name); 
@@ -175,7 +176,7 @@ printf("uuuu: name_in_pisco=%s<, object_name=%s\n",NameInPiscoCatalog,
           status = get_data_from_PISCO_catalog(PISCO_cat,
                              NameInPiscoCatalog, &magV, &B_V, &paral, 
                              &err_paral, &magV_A, &magV_B, spectral_type, 
-                             discov_name2, ads_name2, WDS_name2, &has_an_orbit);
+                             discov_name2, comp_name2, ads_name2, WDS_name2);
           if(status) {
              fprintf(stderr,"get_data_from_PISCO_catalog/Error \
 object=%s not found in PISCO catalog \n (i.e., \"%s\") \n", 
@@ -191,25 +192,24 @@ object=%s not found in PISCO catalog \n (i.e., \"%s\") \n",
                   strcpy(ads_name, ads_name2);
                   }
 
-               if(has_an_orbit) strcpy(orbit, "orb");
-                  else orbit[0] = '\0';
 #ifdef DEBUG
-           printf("(ads_name2=%s discov_name2=%s< WDS_name2=>%s< orbit=%d< stat=%d)\n", 
-                   ads_name2, discov_name2, WDS_name2, has_an_orbit, status);
+           printf("(ads_name2=%s discov_name2=%s< comp_name2=>%s< WDS_name2=>%s< stat=%d)\n", 
+                   ads_name2, discov_name2, comp_name2, WDS_name2, status);
 #endif
-               get_data_from_WDS_catalog(WDS_cat, discov_name2, WDS_name3,
+               get_data_from_WDS_catalog(WDS_cat, discov_name2, comp_name2,
+                                         WDS_name3,
                                          &WdsLastYear, &WdsLastRho, 
                                          &WdsLastTheta, &mag_A, &mag_B, 
-                                         spectral_type, &wds_has_orbit, &found);
+                                         spectral_type, &found);
                if(found) {
-                  sprintf(b_in, "%s = %s%s & %s & %d & & & & & & & %s WY=%d WT=%d WR=%3.1f \\\\\n",
-                         WDS_name2, discov_name2, comp_name, 
-                         ads_name, (int)year, orbit, (int)WdsLastYear, 
+                  sprintf(b_in, "%s = %s%s & %s & %d & & & & & & & WY=%d WT=%d WR=%3.1f \\\\\n",
+                         WDS_name2, discov_name2, comp_name2, 
+                         ads_name, (int)year, (int)WdsLastYear, 
                          (int)WdsLastTheta, WdsLastRho);
                } else {
-                  sprintf(b_in, "%s = %s%s & %s & %d & & & & & & & %s \\\\\n",
-                         WDS_name2, discov_name2, comp_name,
-                         ads_name, (int)year, orbit);
+                  sprintf(b_in, "%s = %s%s & %s & %d & & & & & & & \\\\\n",
+                         WDS_name2, discov_name2, comp_name2,
+                         ads_name, (int)year);
                } 
             } /* EOF status == 0 */
           } /* EOF object_name != 0 */
@@ -269,7 +269,7 @@ int astrom_calib_copy(FILE *fp_in, FILE *fp_out, double *calib_scale1,
 char b_in[NMAX], b_data[NMAX];
 int inside_array, line_is_opened, status, iline;
 int line_with_object_name, nlines, nl_max; 
-int contains_object_name, contains_WDS_name;
+int contains_object_name, contains_WDS_name, skip_this_line=0;
 char *pc, *pc1;
 
 /* Landscape: nl_max= 50 */
@@ -343,21 +343,23 @@ while(!feof(fp_in))
 printf(" Data line: >%s<\n", b_data);
 printf(" line_is_opened=%d\n", line_is_opened);
 #endif
+     status = 0;
      if(!line_is_opened) { 
        status = astrom_calib_data_copy(b_data, b_in, calib_scale1, 
                                        calib_eyepiece1, n_eyepieces1,
                                        theta0, sign, i_date, 
                                        i_eyepiece, i_rho, i_drho, i_theta, 
                                        i_dtheta);
-       if(status == -1) {
-          printf("Fatal error in line %d status=%d\n", iline, status);
-          exit(-1);
-          }
-       }
+// Not a good line with measurements, skip it
+       if(status != 0) 
+          skip_this_line = 1;
+         else 
+          skip_this_line = 0; 
+     }
     } 
 
 /* Write to Latex output file: */
-    if(!line_is_opened) {
+    if(!line_is_opened && (skip_this_line == 0)) {
 // JLP2009: to correct the possible case of " %%" instead of "%%":
       if(comments_wanted  || (b_in[0] != '%' && b_in[1] != '%')) {
         if(inside_array && (b_in[0] != '%' && b_in[1] != '%')) nlines++;
@@ -414,13 +416,18 @@ return(0);
 * i_dtheta: column nber with dtheta values
 * comments_wanted: 1 if comments are wanted, 0 otherwise
 * 
+* in_astrom_fmt: = 1 if gili_format (ADS column and no orbit in input file)
+*                = 2 if calern_format (no ADS column and no orbit in input file)
+* out_calib_fmt: = 1 if gili_format (no filter column)
+*                = 2 if calern_format (filter column)
 *************************************************************************/
 int astrom_calib_publi(FILE *fp_in, FILE *fp_out,  double *calib_scale1,
                        int *calib_eyepiece1, int n_eyepieces1, double theta0, 
                        double sign, int i_filename, int i_date, int i_filter,
                        int i_eyepiece, int i_rho, int i_drho,
                        int i_theta, int i_dtheta, int i_notes,
-                       int comments_wanted, char *filein, int gili_format)
+                       int comments_wanted, char *filein, int in_astrom_fmt,
+                       int out_calib_fmt)
 {
 OBJECT *obj;
 int *index_obj, tabular_only, with_wds_data;
@@ -440,18 +447,24 @@ if((index_obj = (int *)malloc((NOBJ_MAX) * sizeof(int))) == NULL) {
   exit(-1);
   }
 
+// WDS data has been added previously for the input latex file...
 with_wds_data = 1;
 astrom_read_measures(fp_in, comments_wanted, obj, &nobj, i_filename, i_date, 
                      i_filter, i_eyepiece, i_rho, i_drho, i_theta, i_dtheta, 
-                     i_notes, with_wds_data);
+                     i_notes, with_wds_data, in_astrom_fmt);
 
 #ifdef DEBUG
 printf("Returned by astrom_read_measures: nobj = %d\n", nobj);
+printf("in_astrom_fmt (=1 if gili_format: ADS col.): %d\n", in_astrom_fmt);
 #endif
 
+if(nobj == 0) {
+  fprintf(stderr, "Returned by astrom_read_measures: nobj = %d\n", nobj);
+  return(-1);
+  }
+
 astrom_calibrate_measures(obj, nobj, calib_scale1, calib_eyepiece1, 
-                          n_eyepieces1, theta0, 
-                          sign);
+                          n_eyepieces1, theta0, sign);
 
 /* Sort the objects according to their Right Ascension: */
 astrom_ra_sort_objects(obj, index_obj, nobj);
@@ -462,10 +475,11 @@ astrom_mean_for_paper2(obj, nobj);
 
 /* For big tables, should set this parameter to 1: */
 tabular_only = 0;
-if(gili_format == 1)
+// Output in Gili's format (with Dmag)
+ if(out_calib_fmt == 1)
    astrom_write_publi_table_gili(fp_out, comments_wanted, obj, index_obj, nobj,
                          tabular_only);
-else
+ else
    astrom_write_publi_table(fp_out, comments_wanted, obj, index_obj, nobj,
                          tabular_only);
 
@@ -506,7 +520,7 @@ for(i = 0; i < nobj; i++) {
   nm = (obj[io]).nmeas;
 /* New table header in publi_mode */
   if(nlines > nl_max) {
-    fprintf(fp_out,"& & & & & & & & & & & \\\\ \n");
+    fprintf(fp_out,"& & & & & & & & & \\\\ \n");
     fprintf(fp_out,"\\hline \n");
     fprintf(fp_out,"\\end{tabular*} \n");
 /* Problem for too big tables, so I only use tabular for big tables: */
@@ -521,21 +535,24 @@ for(i = 0; i < nobj; i++) {
       fprintf(fp_out,"\\begin{table*} \n");
       }
     fprintf(fp_out,"\\tabcolsep=1mm \n");
-    fprintf(fp_out,"\\begin{tabular*}{\\textwidth}{clrcccccrccl} \n");
+//    fprintf(fp_out,"\\begin{tabular*}{\\textwidth}{clrcccccrccl} \n");
+    fprintf(fp_out,"\\begin{tabular*}{\\textwidth}{clcccccrcl} \n");
     fprintf(fp_out,"\\hline \n");
-    fprintf(fp_out,"& & & & & & & & & & & \\\\ \n");
-    fprintf(fp_out,"WDS & Name & ADS & Epoch & Fil. & Eyep. & $\\rho$ & $\\sigma_\\rho$ & \\multicolumn{1}{c}{$\\theta$} & $\\sigma_\\theta$ & Orb. & Notes \\\\ \n");
-    fprintf(fp_out,"& &       &       &        & (mm)& (\") & (\") & ($^\\circ$) & ($^\\circ$) & & \\\\ \n");
-    fprintf(fp_out,"& & & & & & & & & & & \\\\ \n");
+    fprintf(fp_out,"& & & & & & & & & \\\\ \n");
+//    fprintf(fp_out,"WDS & Name & ADS & Epoch & Fil. & Eyep. & $\\rho$ & $\\sigma_\\rho$ & \\multicolumn{1}{c}{$\\theta$} & $\\sigma_\\theta$ & Orb. & Notes \\\\ \n");
+    fprintf(fp_out,"WDS & Name & Epoch & Fil. & Eyep. & $\\rho$ & $\\sigma_\\rho$ & \\multicolumn{1}{c}{$\\theta$} & $\\sigma_\\theta$ & Notes \\\\ \n");
+//    fprintf(fp_out,"& &       &       &        & (mm)& (\") & (\") & ($^\\circ$) & ($^\\circ$) & & \\\\ \n");
+    fprintf(fp_out,"& &       &        & (mm)& (\") & (\") & ($^\\circ$) & ($^\\circ$) & \\\\ \n");
+    fprintf(fp_out,"& & & & & & & \\\\ \n");
     fprintf(fp_out,"\\hline \n");
-    fprintf(fp_out,"& & & & & & & & & & & \\\\ \n");
+    fprintf(fp_out,"& & & & & & & \\\\ \n");
     nlines = 0;
   }
 
   jj = 0;
 /************* Loop on measurements: **********************/
   for(j = 0; j < nm; j++) {
-    me = &(obj[io]).measure[j];
+    me = &(obj[io]).meas[j];
 /* BOF case not_flagged */
     if(!me->flagged_out) {
 /* For DEBUG:
@@ -551,7 +568,7 @@ if(i < 4) {
 * than the current measurement: if it is the case, compute
 * the mean of the two: */
     for(jnext = j+1; jnext < nm; jnext++) {
-       me_next = &(obj[io]).measure[jnext];
+       me_next = &(obj[io]).meas[jnext];
        if(!me_next->flagged_out && (ABS(me->epoch - me_next->epoch) < 0.001) 
          && !strncmp(me->filter,me_next->filter,3)
          && (me->eyepiece == me_next->eyepiece)
@@ -586,7 +603,8 @@ if(i < 4) {
     if((obj[io]).WY != -1 && me->theta != NO_DATA) { 
            status = astrom_correct_theta_with_WDS_CHARA(&(obj[io]),me);
            }
-    if(status) strcpy(qflag,exclam);
+// JLP2021: \rlap{!} removed
+//    if(status) strcpy(qflag,exclam);
     }
 
   *q_error = (me->dquadrant == 1) ? '?' : ' ';
@@ -596,38 +614,50 @@ if(i < 4) {
     *q_notes = '\0';
 #endif
 
-  if(jj == 0) {
+// Oct2020: jj is no longer used for the same object (idem removed !)
+  if(jj >= 0) {
      astrom_preformat_wds_name(obj[io].wds, wds_name);
 /*** Format for first line of an object */
 /* October 2008: 3 decimals for the epoch */
   if(me->rho != NO_DATA) 
-    fprintf(fp_out,"%s & %s & %s & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f & %d & %s %s\\\\\n", 
-         wds_name, obj[io].name, obj[io].ads, me->epoch, me->filter, 
-         me->eyepiece, me->rho, me->drho, me->theta, qflag, me->dtheta, 
-         obj[io].orbit, me->notes, q_notes);
-  else
-    fprintf(fp_out,"%s & %s & %s & %.3f & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata & %d & %s \\\\\n", 
-         wds_name, obj[io].name, obj[io].ads, me->epoch, me->filter, 
-         me->eyepiece, obj[io].orbit, me->notes);
-  } /* EOF j == 0 */
-/*** Format for subsequent lines of an object */
-  else {
-  if(me->rho != NO_DATA) 
-    fprintf(fp_out,"\\idem & \\idem & \\idem & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f & %d & %s %s\\\\\n", 
+//    fprintf(fp_out,"%s & %s%s & %s & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f &  & %s %s\\\\\n", 
+    fprintf(fp_out,"%s & %s%s & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f & %s %s\\\\\n", 
+         wds_name, obj[io].discov_name, obj[io].comp_name, 
+//         obj[io].ads, me->epoch, me->filter, 
          me->epoch, me->filter, 
          me->eyepiece, me->rho, me->drho, me->theta, qflag, me->dtheta, 
-         obj[io].orbit, me->notes, q_notes);
+         me->notes, q_notes);
   else
-    fprintf(fp_out,"\\idem & \\idem & \\idem & %.3f & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata & %d & %s \\\\\n", 
-         me->epoch, me->filter, me->eyepiece, obj[io].orbit, me->notes);
-  } /* EOF j != 0 */
+//    fprintf(fp_out,"%s & %s%s & %s & %.3f & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata &  & %s \\\\\n", 
+    fprintf(fp_out,"%s & %s%s & %.3f & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata &  & %s \\\\\n", 
+         wds_name, obj[io].discov_name, obj[io].comp_name, 
+//         obj[io].ads, me->epoch, me->filter, 
+         me->epoch, me->filter, 
+         me->eyepiece, me->notes);
+  } /* EOF j == 0 */
+// Oct2020: jj is no longer used for the same object (idem removed !)
+/*** Format for subsequent lines of an object 
+  else {
+  if(me->rho != NO_DATA) 
+//    fprintf(fp_out,"\\idem & \\idem & \\idem & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f & & %s %s\\\\\n", 
+    fprintf(fp_out,"\\idem & \\idem & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f & %s %s\\\\\n", 
+         me->epoch, me->filter, 
+         me->eyepiece, me->rho, me->drho, me->theta, qflag, me->dtheta, 
+         me->notes, q_notes);
+  else
+//    fprintf(fp_out,"\\idem & \\idem & \\idem & %.3f & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata & & %s \\\\\n", 
+    fprintf(fp_out,"\\idem & \\idem & %.3f & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata & %s \\\\\n", 
+         me->epoch, me->filter, me->eyepiece, me->notes);
+  } // EOF j != 0 
+*/
  nlines++;
+// Oct2020: jj is no longer used for the same object (idem removed !)
  jj++;
  } /* EOF case not_flagged */
  } /* EOF loop on j */
 } /* EOF loop on i */
 
- fprintf(fp_out,"& & & & & & & & & & & \\\\ \n");
+ fprintf(fp_out,"& & & & & & & \\\\ \n");
  fprintf(fp_out,"\\hline \n");
  fprintf(fp_out,"\\end{tabular*} \n \n");
  fprintf(fp_out,"Note: In column 9, the exponent $^*$ indicates that the position angle\n");
@@ -640,7 +670,7 @@ return(0);
 }
 /*****************************************************************************
 * Write the LateX array in a gili's format 
-* without the filter, the ADS name and the orbit
+* without the filter, the ADS name 
 *****************************************************************************/
 int astrom_write_publi_table_gili(FILE *fp_out, int comments_wanted, 
                                   OBJECT *obj, int *index_obj, int nobj, 
@@ -649,7 +679,7 @@ int astrom_write_publi_table_gili(FILE *fp_out, int comments_wanted,
 MEASURE *me, *me_next;
 int good_q, nm, io, nlines, jj, jnext, nl_max, status;
 char qflag[20], asterisk[20], exclam[20], q_error[1], wds_name[40]; 
-char q_notes[20], dmag_string[16];
+char q_notes[20], dmag_string[16], nd_notes[16];
 register int i, j;
 
 /* Portrait: nl_max=55 (MNRAS for one page) */
@@ -707,13 +737,14 @@ for(i = 0; i < nobj; i++) {
   jj = 0;
 /************* Loop on measurements: **********************/
   for(j = 0; j < nm; j++) {
-    me = &(obj[io]).measure[j];
+    me = &(obj[io]).meas[j];
 /* BOF case not_flagged */
     if(!me->flagged_out) {
       if(me->rho <= 0.1) {
 // Unresolved case:
-         fprintf(fp_out,"%s & %s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata &  & Unres. \\\\\n", 
-             wds_name, obj[io].name, me->epoch, me->eyepiece); //  me->notes);
+         fprintf(fp_out,"%s & %s%s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata &  & Unres. \\\\\n", 
+             wds_name, obj[io].discov_name, obj[io].comp_name, 
+             me->epoch, me->eyepiece); //  me->notes);
       } else {
 /* For DEBUG:
 if(i < 4) {
@@ -730,7 +761,7 @@ if(i < 4) {
 * than the current measurement: if it is the case, compute
 * the mean of the two: */
     for(jnext = j+1; jnext < nm; jnext++) {
-       me_next = &(obj[io]).measure[jnext];
+       me_next = &(obj[io]).meas[jnext];
        if(!me_next->flagged_out && (ABS(me->epoch - me_next->epoch) < 0.001) 
 //         && !strncmp(me->filter,me_next->filter,3)
          && (me->eyepiece == me_next->eyepiece)
@@ -765,7 +796,8 @@ if(i < 4) {
     if((obj[io]).WY != -1 && me->theta != NO_DATA) { 
            status = astrom_correct_theta_with_WDS_CHARA(&(obj[io]),me);
            }
-    if(status) strcpy(qflag,exclam);
+// JLP 2021 \rlap{!} removed
+//    if(status) strcpy(qflag,exclam);
     }
 
   *q_error = (me->dquadrant == 1) ? '?' : ' ';
@@ -775,53 +807,53 @@ if(i < 4) {
     *q_notes = '\0';
 #endif
 
+// ND new double:
+  if(me->is_new_double == 1) strcpy(nd_notes, "ND");
+   else strcpy(nd_notes, "");
+
 // dmag:
   if(me->dmag >= 0.) sprintf(dmag_string, "%.2f", me->dmag);
    else strcpy(dmag_string, "");
 
-  if(jj == 0) {
+  if(jj >= 0) {
      astrom_preformat_wds_name(obj[io].wds, wds_name);
 /*** Format for first line of an object */
 /* October 2008: 3 decimals for the epoch */
   if(me->rho != NO_DATA) 
-/*    fprintf(fp_out,"%s & %s & %s & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f & %d & %s %s\\\\\n", 
-         wds_name, obj[io].name, obj[io].ads, me->epoch, me->filter, 
+/*    fprintf(fp_out,"%s & %s & %s & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f & & %s %s %s\\\\\n", 
+         wds_name, obj[io].discov_name, obj[io].comp_name,
+         obj[io].ads, me->epoch, me->filter, 
          me->eyepiece, me->rho, me->drho, me->theta, qflag, me->dtheta, 
-         obj[io].orbit, me->notes, q_notes);
+         me->notes, q_notes, nd_notes);
 */
-    fprintf(fp_out,"%s & %s & %.3f & %d & %.3f & %.3f & %.1f%s & %.1f & %s &\\\\\n", 
-         wds_name, obj[io].name, me->epoch, me->eyepiece, me->rho, me->drho, 
-         me->theta, qflag, me->dtheta, dmag_string); //, me->notes, q_notes);
+    fprintf(fp_out,"%s & %s%s & %.3f & %d & %.3f & %.3f & %.1f%s & %.1f & %s & %s\\\\\n", 
+         wds_name, obj[io].discov_name, obj[io].comp_name,
+         me->epoch, me->eyepiece, me->rho, me->drho, 
+         me->theta, qflag, me->dtheta, dmag_string, nd_notes); //, me->notes, q_notes);
   else
 /*
-    fprintf(fp_out,"%s & %s & %s & %.3f & %s & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata & %d & \\\\\n", 
-         wds_name, obj[io].name, obj[io].ads, me->epoch, me->filter, 
-         me->eyepiece, obj[io].orbit); //, me->notes);
+    fprintf(fp_out,"%s & %s%s & %s & %.3f & %s & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata & & \\\\\n", 
+         wds_name, obj[io].discov_name, obj[io].comp_name, 
+         obj[io].ads, me->epoch, me->filter, 
+         me->eyepiece); //, me->notes);
 */
-    fprintf(fp_out,"%s & %s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata & \\nodata &  \\\\\n", 
-         wds_name, obj[io].name, me->epoch, me->eyepiece); //, me->notes);
-  } /* EOF j == 0 */
+    fprintf(fp_out,"%s & %s%s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata & \\nodata &  \\\\\n", 
+         wds_name, obj[io].discov_name, obj[io].comp_name, 
+         me->epoch, me->eyepiece); //, me->notes);
+  } /* EOF j >= 0 */
 /*** Format for subsequent lines of an object */
+/***
   else {
   if(me->rho != NO_DATA) 
-/*
-    fprintf(fp_out,"\\idem & \\idem & \\idem & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f & %d & \\\\\n", 
-         me->epoch, me->filter, 
-         me->eyepiece, me->rho, me->drho, me->theta, qflag, me->dtheta, 
-         obj[io].orbit); //, me->notes, q_notes);
-*/
-    fprintf(fp_out,"\\idem & \\idem & %.3f & %d & %.3f & %.3f & %.1f%s & %.1f & %s & \\\\\n", 
+    fprintf(fp_out,"\\idem & \\idem & %.3f & %d & %.3f & %.3f & %.1f%s & %.1f & %s & %s \\\\\n", 
          me->epoch,  me->eyepiece, me->rho, me->drho, me->theta, 
-         qflag, me->dtheta, dmag_string); //, me->notes, q_notes);
+         qflag, me->dtheta, dmag_string, nd_notes); //, me->notes, q_notes);
   else
-/*
-    fprintf(fp_out,"\\idem & \\idem & \\idem & %.3f & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata & %d & %s \\\\\n", 
-         me->epoch, me->filter, me->eyepiece, obj[io].orbit, me->notes);
-*/
     fprintf(fp_out,"\\idem & \\idem & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata & \nodata & \\\\\n", 
          me->epoch, me->eyepiece); //, me->notes);
-    } // End of resolved case
-  } /* EOF j != 0 */
+    } // EOF j != 0 
+***/
+  } // End of resolved case
  nlines++;
  jj++;
  } /* EOF case not_flagged */
@@ -842,7 +874,7 @@ if(i < 4) {
 return(0);
 }
 /*****************************************************************************
-* Read the measurements and object parameters from the input file 
+* Read the measurements and object parameters from the input astrom file 
 *
 * INPUT:
 * i_filename: column nber of the filename used for this measurement
@@ -854,6 +886,10 @@ return(0);
 * i_notes: column nber with the notes
 * nobj: number of objects already entered into *obj 
 * with_wds_data: flag set to one if wds data are in the input file 
+* in_astrom_fmt : 1 = (gili format) if empty ADS column and no orbit info.
+*                 2 = (Calern format) if no ADS column
+* out_calib_fmt : 1 = (gili format) if no filter column
+*                 2 = (Calern format) if filter column
 *
 * OUTPUT:
 * obj: OBJECT structure 
@@ -863,11 +899,11 @@ int astrom_read_measures(FILE *fp_in, int comments_wanted, OBJECT *obj,
                          int *nobj, int i_filename, int i_date, 
                          int i_filter, int i_eyepiece, int i_rho, 
                          int i_drho, int i_theta, int i_dtheta, int i_notes,
-                         int with_wds_data)
+                         int with_wds_data, int in_astrom_fmt)
 {
 char b_in[NMAX], b_data[NMAX];
 char wds_name[40], discov_name[40], ads_name[40]; 
-int inside_array, line_is_opened, status, orbit, line_to_reject, i_obj;
+int inside_array, line_is_opened, status, line_to_reject, i_obj;
 int input_with_header;
 char *pc, *pc1;
 
@@ -895,7 +931,6 @@ line_is_opened = 0;
 wds_name[0] = '\0';
 discov_name[0] = '\0';
 ads_name[0] = '\0';
-orbit = 0;
 
 while(!feof(fp_in))
 {
@@ -952,9 +987,10 @@ printf(" astrom_read_measures/Trying to add a new object, current nobj=%d (wds_d
 /* Try to add a new object and add the parameters of this object to obj: */
        if(with_wds_data == 1) 
             status = astrom_add_new_object_with_wds_data(b_data, obj, nobj, 
-                                                         i_notes);
+                                                         i_notes, in_astrom_fmt);
        else 
-            status = astrom_add_new_object_without_wds_data(b_data, obj, nobj); 
+            status = astrom_add_new_object_without_wds_data(b_data, obj, nobj,
+                                                            in_astrom_fmt); 
        if(status == 0) {
 /* Index of current object in OBJECT structure array: */
           i_obj = *nobj - 1;
@@ -962,9 +998,10 @@ printf(" astrom_read_measures/Trying to add a new object, current nobj=%d (wds_d
           }
 
 
+// If status was zero, it was a new object line,
+// if it was not zero, it was a line containing rho, theta,... i.e. the measures
 /* Try to add a new measure: */
-// JLP2020 it was != 0 : why ??
-       if((status == 0) && (*nobj > 1)) {
+       if((status != 0) && (*nobj >= 1)) {
          status = astrom_check_measure(b_data, i_eyepiece, i_rho, i_drho, 
                                        i_theta, i_dtheta);
 #ifdef DEBUG
@@ -976,8 +1013,10 @@ printf("astrom_read_measures/Adding new measurement for object #i_obj=%d nm=%d (
                            i_filter, i_eyepiece, i_rho, i_drho, i_theta, 
                            i_dtheta, i_notes, comments_wanted);
            } 
-printf("astrom_read_measures/ nmeas=%d rho=%.2f theta=%.2f\n", obj[i_obj].measure[0].rho,
-        (obj[i_obj]).nmeas, obj[i_obj].measure[0].theta);
+#ifdef DEBUG
+printf("astrom_read_measures/ nmeas=%d rho=%.2f theta=%.2f\n", obj[i_obj].meas[0].rho,
+        (obj[i_obj]).nmeas, obj[i_obj].meas[0].theta);
+#endif
          }
 
        } /* EOF !line_is_opened */
@@ -989,26 +1028,28 @@ return(0);
 /**************************************************************************
 * Check if current line is that of a new object.
 * If so, load corresponding data into new OBJECT structure:
-*  ob->nmeas, ob->orbit, ob->ra, ob->dec, ob->WR, ob->WT, ob->WY
+*  ob->nmeas, ob->ra, ob->dec, ob->WR, ob->WT, ob->WY
 *
 * Check if current line is compatible with the syntax of a new object
 * Example:
-* 16564+6502 = STF 2118 AB & ADS 10279 & 2004. & & & & & & & orb \\
+* 16564+6502 = STF 2118 AB & ADS 10279 & 2004. & & & & & & &  \\
 * Or:
 *  & ADS 10279 & 2004. & & & & & & & \\
 * Or:
-  COU 2118 &  & 2004. & & & & & & & orb \\
+  COU 2118 &  & 2004. & & & & & & &  \\
 *
 *
 * i_notes: column nber with the notes
+* in_astrom_fmt: (gili_format) flag set to 1 if no ADS column and no orbit info
 **************************************************************************/
 int astrom_add_new_object_with_wds_data(char *b_data, OBJECT *obj, int *nobj, 
-                                        int i_notes)
+                                        int i_notes, int in_astrom_fmt)
 { 
 OBJECT *ob;
 double WR, WT, WY;
 char wds_name[40], discov_name[40], ads_name[40], *pc, buffer[40];
-int status, orbit, ih, im;
+char comp_name[40];
+int status, ih, im;
 
 if(*nobj > NOBJ_MAX - 1) {
   fprintf(stderr, 
@@ -1019,20 +1060,18 @@ if(*nobj > NOBJ_MAX - 1) {
 
 ob = &obj[*nobj];
 
-status = astrom_read_object_data_for_wds_or_ads(b_data, wds_name, discov_name, 
-                                                ads_name, &orbit, &WR, &WT, &WY,
-                                                i_notes);
+status = astrom_read_new_object_line_for_wds_or_ads(b_data, wds_name, 
+                                                discov_name, comp_name,
+                                                ads_name, &WR, &WT, &WY,
+                                                i_notes, in_astrom_fmt);
 
-printf("astrom_add_new_object_with_wds_data/status=%d nobj = %d nm=%d\n", 
-       status, *nobj, ob->nmeas);
-
+// If status is zero, this line is a good line for a new object:
 if(status == 0) {
   strcpy(ob->wds, wds_name);
   strcpy(ob->ads, ads_name);
-  strcpy(ob->name, discov_name);
+  strcpy(ob->discov_name, discov_name);
+  strcpy(ob->comp_name, comp_name);
   ob->nmeas = 0;
-  ob->orbit = orbit;
-
 
 /* Decode Right Ascension from WDS name: */
   ob->ra = 0.;
@@ -1065,13 +1104,14 @@ if(status == 0) {
 
 #ifdef DEBUG
   printf(" New object added: nobj = %d\n", *nobj);
-  printf(" name= %s %s %s orbit=%d", ob->wds, ob->name, ob->ads, ob->orbit);
+  printf(" name= wds=%s disc=%s ads=%s ", ob->wds, ob->discov_name, ob->ads);
   printf(" ra= %f dec=%d WR=%f WT=%f WY=%f nm=%d\n", ob->ra, ob->dec, 
            ob->WR, ob->WT, ob->WY, ob->nmeas);
 #endif
+// If status is zero, this line is not a good line for a new object:
   } else {
 #ifdef DEBUG
-  fprintf(stderr," Failure adding new object (nobj = %d) status =%d\n", 
+  fprintf(stderr," astrom_add_new_object_with_wds_data/This line is not a good line for adding a new object (nobj = %d) status =%d\n", 
           *nobj, status);
 #endif
   }
@@ -1081,21 +1121,28 @@ return(status);
 /**************************************************************************
 * Check if current line is that of a new object.
 * If so, load corresponding data into new OBJECT structure:
-*  ob->nmeas, ob->orbit, ob->ra, ob->dec, ob->WR, ob->WT, ob->WY
+*  ob->nmeas, ob->ra, ob->dec, ob->WR, ob->WT, ob->WY
 *
 * Check if current line is compatible with the syntax of a new object
 * Example:
-* 16564+6502 = STF 2118 AB & ADS 10279 & 2004. & & & & & & & orb \\
+* 16564+6502 = STF 2118 AB & ADS 10279 & 2004. & & & & & & & \\
 * Or:
 *  & ADS 10279 & 2004. & & & & & & & \\
 *
+* INPUT:
+*   in_astrom_fmt : (gili_format) flag set to 1 if no ADS column and no orbit information
+*
+* OUTPUT:
+*   *obj:  use the pointer of obj[*nobj] to save the data that has been read
 *
 **************************************************************************/
-int astrom_add_new_object_without_wds_data(char *b_data, OBJECT *obj, int *nobj)
+int astrom_add_new_object_without_wds_data(char *b_data, OBJECT *obj, int *nobj,
+                                           int in_astrom_fmt)
 { 
 OBJECT *ob;
-char discov_name[40], *pc, buffer[40];
-int status, epoch_year, ih, im;
+char discov_name[40], comp_name[40], *pc, buffer[40];
+int status, ih, im;
+double epoch_year;
 
 if(*nobj > NOBJ_MAX - 1) {
   fprintf(stderr, 
@@ -1104,16 +1151,19 @@ if(*nobj > NOBJ_MAX - 1) {
   exit(-1);
   }
 
+// Will use the pointer of obj[*nobj] to save and output the data that has been read
 ob = &obj[*nobj];
 
-status = astrom_read_object_data_for_name_only(b_data, discov_name, &epoch_year); 
+status = astrom_read_object_data_for_name_only(b_data, discov_name, 
+                                               comp_name, &epoch_year,
+                                               in_astrom_fmt); 
 
 if(status == 0) {
   strcpy(ob->wds, "");
   strcpy(ob->ads, "");
-  strcpy(ob->name, discov_name);
+  strcpy(ob->discov_name, discov_name);
+  strcpy(ob->comp_name, comp_name);
   ob->nmeas = 0;
-  ob->orbit = 0;
   ob->ra = 0.;
   ob->dec = 0.;
   ob->WR = 0.;
@@ -1125,7 +1175,7 @@ if(status == 0) {
 
 #ifdef DEBUG
   printf(" astrom_add_new_object_without_wds_data/New object added: nobj = %d\n", *nobj);
-  printf(" name= %s %s %s orbit=%d", ob->wds, ob->name, ob->ads, ob->orbit);
+  printf(" name= wds=%s disc=%s ads=%s ", ob->wds, ob->discov_name, ob->ads);
   printf(" ra= %f dec=%d WR=%f WT=%f WY=%f nm=%d\n", ob->ra, ob->dec, 
            ob->WR, ob->WT, ob->WY, ob->nmeas);
 #endif
@@ -1153,7 +1203,7 @@ for(i = 0; i < nobj; i++) {
   nm = (obj[i]).nmeas;
   me_prev = NULL;
   for(j = 0; j < nm; j++) {
-    me = &(obj[i]).measure[j];
+    me = &(obj[i]).meas[j];
 /* rec_dir = 1  if recorded file
 *          = -1 if direct file
 *          = 0 otherwise
@@ -1251,7 +1301,7 @@ for(i = 0; i < nobj; i++) {
 
 /* First root is the first point: */
   for(j = 0; j < nm; j++) j0[j] = 0;
-  me_now = &(obj[i]).measure[0];
+  me_now = &(obj[i]).meas[0];
   j0[0] = 0;
   nj0 = 1;
   j_used[0] = 1;
@@ -1270,7 +1320,7 @@ for(i = 0; i < nobj; i++) {
 */
   for(j = 1; j < nm; j++) {
     if(!j_used[j]) {
-       me = &(obj[i]).measure[j];
+       me = &(obj[i]).meas[j];
 /* Record all the measurements refering to same epoch,
 */
       if((me->epoch == me_now->epoch) 
@@ -1303,7 +1353,7 @@ for(i = 0; i < nobj; i++) {
 /* Next root is the next free point: */
   for(j = 0; j < nm; j++) j0[j] = 0;
   for(j = 0; j < nm; j++) {
-    me = &(obj[i]).measure[j];
+    me = &(obj[i]).meas[j];
     if(!j_used[j] && !me->flagged_out) break;
     }
 /* Exit from loop if all points have been used: */
@@ -1311,7 +1361,7 @@ for(i = 0; i < nobj; i++) {
    break;
 /* Otherwise select the new root: */
   } else {
-  me_now = &(obj[i]).measure[j];
+  me_now = &(obj[i]).meas[j];
   j_used[j] = 1;
   j0[0] = j;
   nj0 = 1;
@@ -1345,7 +1395,7 @@ rho = 0.; theta = 0.;
 drho = 0.; dtheta = 0.;
 /* Compute the sum of all measurements concerning this filter: */
   for(j = 0; j < nj0; j++) {
-    me = &(obj[i]).measure[j0[j]];
+    me = &(obj[i]).meas[j0[j]];
     no_data = ((me->rho == NO_DATA) || (me->theta == NO_DATA)) ? 1 : 0; 
     if(!no_data) {
        rho += me->rho;
@@ -1369,14 +1419,14 @@ if(n_measures > 0) {
   }
 
 /* Store result on the first element and disable the others: */
-  me = &(obj[i]).measure[j0[0]];
+  me = &(obj[i]).meas[j0[0]];
   me->rho = rho;
   me->drho = drho;
   me->theta = theta;
   me->dtheta = dtheta;
   me->quadrant = quadrant_value;
   for(j = 1; j < nj0; j++) {
-    me = &(obj[i]).measure[j0[j]];
+    me = &(obj[i]).meas[j0[j]];
     me->flagged_out = 1;
     }
 
@@ -1387,7 +1437,7 @@ return(0);
 * and load the result in the first measure
 *
 * io: object index in obj
-* jm1, jm2: measurement indices of the two measures in obj[io].measure
+* jm1, jm2: measurement indices of the two measures in obj[io].meas
 ************************************************************************/
 int astrom_compute_mean_of_two_measures(OBJECT *obj, int io, int jm1, int jm2)
 {
@@ -1395,8 +1445,8 @@ MEASURE *me1, *me2;
 double w1, w2, sum;
 int no_data1, no_data2;
 
-me1 = &(obj[io]).measure[jm1];
-me2 = &(obj[io]).measure[jm2];
+me1 = &(obj[io]).meas[jm1];
+me2 = &(obj[io]).meas[jm2];
 
 no_data1 = ((me1->rho == NO_DATA) || (me1->theta == NO_DATA)) ? 1 : 0; 
 no_data2 = ((me2->rho == NO_DATA) || (me2->theta == NO_DATA)) ? 1 : 0; 
@@ -1422,8 +1472,8 @@ w2 /= sum;
 
 #ifdef DEBUG
 printf(" astrom_compute_mean_of_two_measures/WDS=%s ADS=%s NAME=%s io=%d jm1=%d jm2=%d dt1=%f dt2=%f dr1=%f dr2=%f w1=%f w2 =%f \n", 
-       (obj[io]).wds, (obj[io]).ads, (obj[io]).name, io, jm1, jm2, me1->dtheta, 
-       me2->dtheta, me1->drho, me2->drho, w1, w2);
+       (obj[io]).wds, (obj[io]).ads, (obj[io]).discov_name, io, jm1, jm2, 
+       me1->dtheta, me2->dtheta, me1->drho, me2->drho, w1, w2);
 #endif
 
 /* Load the mean onto the first measure: */
@@ -1470,7 +1520,7 @@ discov_name[0] = '\0';
 
 /* Reads year in 3rd column: */
 icol = 3;
-istat = latex_read_fvalue(b_in, year, icol, iverbose);
+istat = latex_read_dvalue(b_in, year, icol, iverbose);
 if(istat) {
   fprintf(stderr, "astrom_get_name_from_2nd_col/Fatal error reading year in line: %s\n", b_in);
   exit(-1);
@@ -1575,7 +1625,7 @@ jlp_compact_string(buff, 80);
 if(!strncmp(buff, "\\nodata", 7)) {
   *is_measurement = 1;
  } else {
-  istat = latex_read_fvalue(b_in, &ww, icol, iverbose);
+  istat = latex_read_dvalue(b_in, &ww, icol, iverbose);
   if(!istat) {
      *is_measurement = 1;
      }

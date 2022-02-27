@@ -16,6 +16,7 @@
 */
 #include "PISCO_catalog_utils.h"
 #include "jlp_catalog_utils.h" // is_in_line()
+#include "latex_utils.h" // latex_get_column_item() 
 
 /*
 #define DEBUG 
@@ -33,13 +34,12 @@
 * alpha, delta: coordinates of object (in radians)
 * epoch_o: epoch of observation
 * coord_equinox: equinox corresponding to the coordinates 
-* has_an_orbit: flag set to one if an orbit is present
 *
 *************************************************************/
 int get_coordinates_from_PISCO_catalog(char *PISCO_catalog_name, 
                                        char *NameInPiscoCatalog,
                                        double *alpha, double *delta, 
-                                       double *coord_equinox, int *has_an_orbit)
+                                       double *coord_equinox)
 {
 char in_line1[80], in_line2[80], *pc;
 FILE *fp_cat;
@@ -112,10 +112,9 @@ if(found) {
     fprintf(stderr, "Error reading PISCO_catalog at line: >%s< (status=%d)\n", 
             in_line1, status);
     } else {
-    *has_an_orbit = is_in_line(in_line2, "orbit");
 #ifdef DEBUG
-    printf("object=%s object_len=%d orbit=%d alpha=%f delta=%f \n %s\n %s\n", 
-           NameInPiscoCatalog, object_len, *has_an_orbit, *alpha, *delta, 
+    printf("object=%s object_len=%d alpha=%f delta=%f \n %s\n %s\n", 
+           NameInPiscoCatalog, object_len, *alpha, *delta, 
            in_line1, in_line2);
 #endif
     status = 0;
@@ -142,11 +141,11 @@ return(status);
 int get_data_from_PISCO_catalog(char *PISCO_catalog_name, 
                                 char *NameInPiscoCatalog, 
                                 double *magV, double *B_V, 
-                                double *paral, double *err_paral, double *magV_A, 
-                                double *magV_B, 
+                                double *paral, double *err_paral, 
+                                double *magV_A, double *magV_B, 
                                 char *spectral_type, char *discov_name, 
-                                char *ads_name, char *WDS_name, 
-                                int *has_an_orbit) 
+                                char *comp_name,
+                                char *ads_name, char *WDS_name) 
 {
 char in_line1[128], in_line2[128], compacted_line[128], *pc;
 char compacted_object[64], compacted_discov[64], new_ads_name[80];
@@ -158,7 +157,7 @@ int object_len, status, verbose_if_error;
 *magV_B = 100.;
 spectral_type[0] = '\0';
 discov_name[0] = '\0';
-*has_an_orbit = 0;
+comp_name[0] = '\0';
 *magV = 100.;
 *paral = 0.;
 *err_paral = 0.;
@@ -226,7 +225,7 @@ while(!feof(fp_cat)) {
            return(-1);
            }
 /* Look for the discoverer's name the 2nd line */
-         PISCO_catalog_read_line2_discov(in_line2, discov_name);
+         PISCO_catalog_read_line2_discov(in_line2, discov_name, comp_name);
          strcpy(compacted_discov, discov_name);
          jlp_compact_string(compacted_discov, 64);
          break;
@@ -235,7 +234,7 @@ while(!feof(fp_cat)) {
    } else if(in_line1[0] == '&') {
     strcpy(in_line2, in_line1);
 /* Look for the discoverer's name the 2nd line */
-    PISCO_catalog_read_line2_discov(in_line2, discov_name);
+    PISCO_catalog_read_line2_discov(in_line2, discov_name, comp_name);
     strcpy(compacted_discov, discov_name);
     jlp_compact_string(compacted_discov, 64);
     if(!strncmp(compacted_object, compacted_discov, object_len)
@@ -257,8 +256,7 @@ while(!feof(fp_cat)) {
 
 
 if(found) {
-  status = PISCO_catalog_read_line2(in_line2, magV_A, magV_B, spectral_type, 
-                                    has_an_orbit);
+  status = PISCO_catalog_read_line2(in_line2, magV_A, magV_B, spectral_type); 
   if (status) {
       fprintf(stderr, "From read_line2/Fatal error/Bad syntax in line #%d\n", iline);
       exit(-1);
@@ -531,11 +529,9 @@ return(0);
 * OUTPUT:
 * magV_A, magV_B: V magnitude of A and B components
 * spectral_type: (global) spectral type of the binary
-* has_an_orbit: flag set to one if an orbit is available in the litterature
-*               or to zero otherwise
 ***************************************************************************/
 int PISCO_catalog_read_line2(char *in_line, double *magV_A, double *magV_B, 
-                             char *spectral_type, int *has_an_orbit)
+                             char *spectral_type)
 {
 char buffer[120], buffer0[120], *pc, *pc0;
 double val0;
@@ -545,8 +541,6 @@ int status, nval, verbose_if_error = 1;
 spectral_type[0] = '\0';
 *magV_A = 100.;
 *magV_B = 100.;
-
-*has_an_orbit = is_in_line(in_line, "orbit");
 
 /* Read magV_A, magV_B, spectral_type 
 * Example: & A: 9.5, B: 9.5 F0   & STF  261,    & \cr
@@ -607,13 +601,15 @@ return(0);
 * discov_name: name of this object as given by its discoverer 
 *              using the WDS syntax (with 8 characters)
 ***************************************************************************/
-int PISCO_catalog_read_line2_discov(char *in_line, char *discov_name)
+int PISCO_catalog_read_line2_discov(char *in_line, char *discov_name,
+                                    char *comp_name)
 {
 char buffer[120], *pc;
 int i, status, verbose_if_error = 0;
 
 /* Initial values: */
 discov_name[0] = '\0';
+comp_name[0] = '\0';
 
 /* Read discoverer's name: */
 status = latex_get_column_item(in_line, buffer, 3, verbose_if_error);

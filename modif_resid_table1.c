@@ -3,11 +3,13 @@
 *
 * To modify the old formatted tables (MerI, MerII, MerIII, ... MerVI)
 * so that they are compatible with "merge_calib_resid.c"
+* (add new columns with the residuals)
 *
 * JLP 
 * Version 30/03/2018
 *************************************************************************/
 #include "jlp_catalog_utils.h"
+#include "jlp_string.h" // in jpllib/jlp_fits jlp_cleanup
 
 #define DEBUG
 #define DEBUG_1
@@ -91,7 +93,7 @@ while(!feof(fp_resid)) {
 // Lines starting with % are ignored
     if(in_line[0] != '%') { 
 // Remove the end of line '\n' from input line:
-      cleanup_string(in_line, 256);
+      jlp_cleanup_string(in_line, 256);
 
 /***
 // Remove 5th column:

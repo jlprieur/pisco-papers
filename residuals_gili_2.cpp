@@ -27,11 +27,12 @@
 *    *_ref2.tex : Latex ASCII file with full references
 *
 * JLP 
-* Version 13/04/2009
+* Version 13/05/2021
 *************************************************************************/
 #include "jlp_catalog_utils.h"
 #include "residuals_utils.h"
 #include "OC6_catalog_utils.h"
+#include "jlp_string.h"  // jlp_compact_string
 
 /*
 #define DEBUG
@@ -39,13 +40,14 @@
 */
 
 static int residuals_gili_2_main(char *input_orbit_list, char *output_ext, 
-                                 char *calib_fname, 
-                                 char *OC6_references_fname);
+                                 char *calib_fname, char *OC6_references_fname,
+                                 int orbit_grade_max, int gili_format);
 static int compute_residuals_from_calib_gili(FILE *fp_out_txt, 
-                                  FILE *fp_out_latex, FILE *fp_out_curve, 
-                                  FILE *fp_out_ref1, FILE *fp_out_ref2, 
-                                  char *calib_fname, char *input_orbit_list, 
-                                  char *OC6_references_fname);
+                               FILE *fp_out_latex, FILE *fp_out_curve, 
+                               FILE *fp_out_ref1, FILE *fp_out_ref2, 
+                               char *calib_fname, char *input_orbit_list, 
+                               char *OC6_references_fname, int orbit_grade_max,
+                               int gili_format);
 static int get_orbit_from_OC6catalog(char *input_orbit_list, 
                                      char *OC6_references_fname,
                                      char *object_name1, char *comp_name1, 
@@ -57,12 +59,13 @@ static int get_orbit_from_OC6catalog(char *input_orbit_list,
                                      double *T_periastron, 
                                      double *orbit_equinox,
                                      double *mean_motion, double *a_smaxis, 
-                                     double *Period, char *author2,
-                                     char *refer0, char *refer1);
+                                     double *Period, int *orbit_grade,
+                                     char *author2, char *refer0, char *refer1);
 static int process_measurement_gili(FILE *fp_out_txt, FILE *fp_out_latex,
               FILE *fp_out_curve, char *OC6_references_fname,
               char *object_name, char *discov_name, char *comp_name, 
-              char *author, double Omega_node, double omega_peri, 
+              char *author, int orbit_grade,
+              double Omega_node, double omega_peri, 
               double i_incl, double e_eccent,
               double T_periastron, double Period, double a_smaxis, 
               double mean_motion, double orbit_equinox, double epoch_o, 
@@ -73,6 +76,7 @@ int main(int argc, char *argv[])
 {
 char input_orbit_list[80], output_ext[40], calib_fname[80];
 char OC6_references_fname[128];
+int orbit_grade_max, gili_format;
 
 if(argc == 7) {
   if(*argv[6]) argc = 7;
@@ -83,30 +87,40 @@ if(argc == 7) {
   else if(*argv[1]) argc = 2;
   else argc = 1;
 }
-if(argc != 4 && argc != 5) {
-  printf("Syntax: residuals_2 input_orbit_list output_ext calibrated_latex_table [reference_list] \n");
+if(argc != 6 && argc != 7) {
+  printf("Syntax: residuals_gili_2 input_orbit_list output_ext calibrated_latex_table grade_max gili_format [reference_list] \n");
   printf(" Assume OC6 format (P, a, i, Omega, T, e, omep, [equinox] )\n");
+  printf(" Test that is used: orbit_grade less or equal to orbit_grade_max\n");
   return(-1);
 }
 strcpy(input_orbit_list, argv[1]);
 strcpy(output_ext, argv[2]);
 /* Calibrated latex table */
 strcpy(calib_fname, argv[3]);
+/* orbit_grade_max */
+if(sscanf(argv[4], "%d", &orbit_grade_max) != 1) {
+  printf("Fatal error reading orbit_grade_max ! (argv[4]=%s)\n", argv[4]);
+  return(-1);
+  }
+sscanf(argv[5], "%d", &gili_format);
+
 /* File with full references (not necessary) */
- if(argc == 5) 
-   strcpy(OC6_references_fname, argv[4]);
+ if(argc == 7) 
+   strcpy(OC6_references_fname, argv[6]);
  else 
    OC6_references_fname[0] = '\0';
 
 #ifdef DEBUG
 printf("OK: input_orbit_list=%s output_ext=%s calib_fname=%s\n", 
        input_orbit_list, output_ext, calib_fname);
-printf("OK: OC6_references_fname=>%s<\n", OC6_references_fname);
+printf("OK: orbit_grade_max=%d\n", orbit_grade_max);
+printf("OK: OC6_references_fname=>%s< gili_format=%d\n", 
+        OC6_references_fname, gili_format);
 #endif
 
 /* Call residuals1_main that does the main job: */
 residuals_gili_2_main(input_orbit_list, output_ext, calib_fname, 
-                      OC6_references_fname);
+                      OC6_references_fname, orbit_grade_max, gili_format);
 
 return(0);
 }
@@ -125,7 +139,8 @@ return(0);
 *
 *************************************************************************/
 static int residuals_gili_2_main(char* input_orbit_list, char *output_ext, 
-                                 char *calib_fname, char *OC6_references_fname)
+                                 char *calib_fname, char *OC6_references_fname,
+                                 int orbit_grade_max, int gili_format)
 {
 char out_filename[100];
 FILE *fp_out_txt, *fp_out_latex, *fp_out_curve; 
@@ -154,9 +169,9 @@ if(*OC6_references_fname) {
    }
 fprintf(fp_out_ref1, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
-fprintf(fp_out_ref1, "%% Residuals from: %s and %s, computed on %s", 
-        calib_fname, input_orbit_list, ctime(&t));
-fprintf(fp_out_ref1, "%% Created by residuals_2.c -- JLP version of 13/04/2010 --\n%% \n");
+fprintf(fp_out_ref1, "%% Residuals from: %s and %s, (orbit_grade_max=%d), computed on %s", 
+        calib_fname, input_orbit_list, orbit_grade_max, ctime(&t));
+fprintf(fp_out_ref1, "%% Created by residuals_2.c -- JLP version of 23/05/2021 --\n%% \n");
 fprintf(fp_out_ref1, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
 
@@ -170,9 +185,9 @@ fprintf(fp_out_ref1, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
    }
 fprintf(fp_out_ref2, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
-fprintf(fp_out_ref2, "%% Residuals from: %s and %s, computed on %s", 
-        calib_fname, input_orbit_list, ctime(&t));
-fprintf(fp_out_ref2, "%% Created by residuals_2.c -- JLP version of 13/04/2010 --\n%% \n");
+fprintf(fp_out_ref2, "%% Residuals from: %s and %s, (orbit_grade_max=%d), computed on %s", 
+        calib_fname, input_orbit_list, orbit_grade_max, ctime(&t));
+fprintf(fp_out_ref2, "%% Created by residuals_2.c -- JLP version of 23/05/2021 --\n%% \n");
 fprintf(fp_out_ref2, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
 }  /* EOF case *OC6_references_fname != 0 */
@@ -186,9 +201,9 @@ if((fp_out_txt = fopen(out_filename, "w")) == NULL) {
   }
 fprintf(fp_out_txt, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
-fprintf(fp_out_txt, "%% Residuals from: %s and %s, computed on %s", 
-        calib_fname, input_orbit_list, ctime(&t));
-fprintf(fp_out_txt, "%% Created by residuals_2.c -- JLP version of 13/04/2010 --\n%% \n");
+fprintf(fp_out_txt, "%% Residuals from: %s and %s, (orbit_grade_max=%d), computed on %s", 
+        calib_fname, input_orbit_list, orbit_grade_max, ctime(&t));
+fprintf(fp_out_txt, "%% Created by residuals_2.c -- JLP version of 23/05/2021 --\n%% \n");
 fprintf(fp_out_txt, "%% Name  Epoch  rho_O  rho_C  Drho_O-C  theta_O  theta_C  Dtheta_O-C  Author\n");
 fprintf(fp_out_txt, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
@@ -204,24 +219,24 @@ if((fp_out_latex = fopen(out_filename, "w")) == NULL) {
 /* Header of the output Latex table: */
 fprintf(fp_out_latex, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
-fprintf(fp_out_latex, "%% Residuals from: %s and %s, computed on %s", 
-        calib_fname, input_orbit_list, ctime(&t));
-fprintf(fp_out_latex, "%% Created by residuals_gili_2.c -- JLP version of 13/02/2020 --\n");
+fprintf(fp_out_latex, "%% Residuals from: %s and %s, (orbit_grade_max=%d), computed on %s", 
+        calib_fname, input_orbit_list, orbit_grade_max, ctime(&t));
+fprintf(fp_out_latex, "%% Created by residuals_gili_2.c -- JLP version of 23/05/2021 --\n");
 fprintf(fp_out_latex, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
 fprintf(fp_out_latex, "\\begin{table} \n\\begin{center} \n\
 \\caption{Residuals of the measurements of Table 1 with published orbits.} \n\
-\\begin{tabular}{llccrr} \n \\hline \n\
- Name  &   Orbit   & Epoch  & $\\rho$(O) \n\
-& $\\Delta \\rho$(O-C) & $\\Delta \\theta$(O-C) \\\\ \n\
+\\begin{tabular}{llcccrrl} \n \\hline \n\
+ Name  &   Orbit   & Epoch  & $\\rho$(O) $\\theta$(O) & \n\
+& $\\Delta \\rho$(O-C) & $\\Delta \\theta$(O-C) & Grade\\\\ \n\
 & & & & (\\arcsec) & ($^\\circ$) \\\\ \n\
-\\hline \n & & & & & \\\\ \n");
+\\hline \n & & & & & & & \\\\ \n");
 
 /* Header of the output curve: */
 fprintf(fp_out_curve, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
-fprintf(fp_out_curve, "%% Residuals from: %s, computed on %s", 
-        input_orbit_list, ctime(&t));
+fprintf(fp_out_curve, "%% Residuals from: %s and %s, (orbit_grade_max=%d), computed on %s", 
+        calib_fname, input_orbit_list, orbit_grade_max, ctime(&t));
 fprintf(fp_out_curve, "%% Created by residuals_2.c -- JLP version of 13/04/2010 --\n");
 fprintf(fp_out_curve, "%% Drho(O-C) Dtheta(O-C) err_rho_O err_theta_O\n");
 fprintf(fp_out_curve, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
@@ -232,10 +247,11 @@ fprintf(fp_out_curve, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
 compute_residuals_from_calib_gili(fp_out_txt, fp_out_latex, 
                                   fp_out_curve, fp_out_ref1, fp_out_ref2, 
                                   calib_fname, input_orbit_list, 
-                                  OC6_references_fname);
+                                  OC6_references_fname, orbit_grade_max,
+                                  gili_format);
 
 /* Epilog for Latex file: */
-fprintf(fp_out_latex, " & & & & & \\\\ \n \\hline \n \\end{tabular} \n\
+fprintf(fp_out_latex, " & & & & & & & \\\\ \n \\hline \n \\end{tabular} \n\
 \\end{center} \n \\end{table*} \n");
 
 /* Close opened files:
@@ -266,7 +282,8 @@ static int compute_residuals_from_calib_gili(FILE *fp_out_txt,
                               FILE *fp_out_latex, FILE *fp_out_curve, 
                               FILE *fp_out_ref1, FILE *fp_out_ref2, 
                               char *calib_fname, char *input_orbit_list, 
-                              char *OC6_references_fname)
+                              char *OC6_references_fname, int orbit_grade_max,
+                              int gili_format)
 {
 #define NMAX 1024
 char author[NMAX*60], refer0[NMAX*130], refer1[NMAX*130], object_name[NMAX*60]; 
@@ -276,7 +293,7 @@ double Omega_node, omega_peri, i_incl, e_eccent, T_periastron, orbit_equinox;
 double mean_motion, a_smaxis, Period; 
 double epoch_o, rho_o, theta_o, err_rho_o, err_theta_o;
 char in_line[300], object_name1[40], comp_name1[40];
-int iline, comp1_is_AB, kk, status, status1;
+int iline, comp1_is_AB, kk, orbit_grade = -1, status, status1;
 FILE *fp_in_latex;
 
 /* Open input file containing the input Latex table: */
@@ -299,12 +316,14 @@ while(!feof(fp_in_latex)){
   if(isdigit(in_line[0])) {
     read_full_name_from_CALIB_line_gili(in_line, object_name1, comp_name1,
                                         &comp1_is_AB);
+printf("From read_full_name_from_CALIB_line_gili: object=%s comp=%s\n", object_name1, comp_name1);
 // JLP2020: reduce the name if comp_is_AB is true:
     if(comp1_is_AB == 1) remove_AB_from_object_name(object_name1);
 
     status = read_measures_from_CALIB_line_gili(in_line, &epoch_o,
                                        &rho_o, &err_rho_o,
-                                       &theta_o, &err_theta_o);
+                                       &theta_o, &err_theta_o, gili_format);
+printf("ZZZZ: rho_o=%f \n", rho_o);
     if(status > 0) {
        fprintf(stderr, "Error retrieving data for object_name=%s %s (Unresolved ?)\n",
             object_name1, comp_name1);
@@ -314,7 +333,8 @@ while(!feof(fp_in_latex)){
        fprintf(stderr, ">%s<\n", in_line);
        exit(-1);
      } else {
-       compact_string(object_name1, 40);
+       jlp_compact_string(object_name1, 40);
+       jlp_compact_string(comp_name1, 40);
        status1 = get_orbit_from_OC6catalog(input_orbit_list, 
                                           OC6_references_fname,
                                           object_name1, comp_name1, comp1_is_AB,
@@ -323,9 +343,15 @@ while(!feof(fp_in_latex)){
                                           &omega_peri, &i_incl, &e_eccent, 
                                           &T_periastron, &orbit_equinox,
                                           &mean_motion, &a_smaxis, &Period,
-                                          author2, refer20, refer21); 
-// Case when an orbit has been found for that object: 
-       if(status1 == 0) {
+                                          &orbit_grade, author2, refer20, 
+                                          refer21); 
+      if(status1 != 0) {
+        fprintf(stderr, 
+          "compute_residuals_gili/Error in get_orbit_from_OC6catalog object=%s comp=%s status1%d\n",
+               object_name1, comp_name1, status1); 
+// Case when an orbit has been found with a good grade for that object: 
+       } else if((orbit_grade > 0) 
+                && (orbit_grade <= orbit_grade_max)) {
          strcpy(&object_name[kk * 60], object_name2); 
          strcpy(&author[kk * 60], author2); 
          strcpy(&refer0[kk * 130], refer20); 
@@ -337,8 +363,8 @@ while(!feof(fp_in_latex)){
 */
          status = process_measurement_gili(fp_out_txt, fp_out_latex, 
                                      fp_out_curve, OC6_references_fname, 
-                                     object_name2, 
-                                     discov_name2, comp_name2, author2, 
+                                     object_name2, discov_name2, comp_name2, 
+                                     author2, orbit_grade,  
                                      Omega_node, omega_peri, i_incl, e_eccent, 
                                      T_periastron, Period, a_smaxis, 
                                      mean_motion, orbit_equinox, epoch_o, 
@@ -387,7 +413,8 @@ return(0);
 static int process_measurement_gili(FILE *fp_out_txt, FILE *fp_out_latex,
               FILE *fp_out_curve, 
               char *OC6_references_fname, char *object_name, char *discov_name,
-              char *comp_name, char *author, double Omega_node, 
+              char *comp_name, char *author, int orbit_grade, 
+              double Omega_node, 
               double omega_peri, double i_incl, double e_eccent,
               double T_periastron, double Period, double a_smaxis, 
               double mean_motion, double orbit_equinox, double epoch_o, 
@@ -435,14 +462,15 @@ compute_ephemerid(Omega_node, omega_peri, i_incl, e_eccent, T_periastron,
 /* Trick to have a constant width */
  sprintf(my_name, "%s %s", object_name, comp_name);
 /* Left justified text is obtained with a minus sign in the format:*/
- fprintf(fp_out_txt, "%-18.18s %9.3f %9.3f %9.3f %8.2f %8.2f %8.2f %7.1f %s\n",
+ fprintf(fp_out_txt, "%-18.18s %9.3f %9.3f %9.3f %8.2f %8.2f %8.2f %7.1f %s %d\n",
          my_name, epoch_o, rho_o, rho_c, Drho, theta_o, theta_c, 
-         Dtheta, author);
- fprintf(fp_out_latex, "%s %s & %s & %9.3f & %9.3f & %8.2f & %8.2f%s \\\\\n",
-         object_name, comp_name, author, epoch_o, rho_o, Drho, Dtheta,
-         quadrant_discrep);
- fprintf(fp_out_curve, "%8.3f %7.2f %8.3f %7.2f %9.3f %-18.18s %s \n",
-         Drho, Dtheta, err_rho_o, err_theta_o, epoch_o, my_name, author);
+         Dtheta, author, orbit_grade);
+ fprintf(fp_out_latex, "%s %s & %s & %9.3f & %9.3f & %6.1f & %8.2f & %8.2f%s & %d \\\\\n",
+         object_name, comp_name, author, epoch_o, rho_o, theta_o, Drho, Dtheta,
+         quadrant_discrep, orbit_grade);
+ fprintf(fp_out_curve, "%8.3f %7.2f %8.3f %7.2f %9.3f %-18.18s %s %d\n",
+         Drho, Dtheta, err_rho_o, err_theta_o, epoch_o, my_name, author,
+         orbit_grade);
 
 return(0);
 }
@@ -460,8 +488,8 @@ static int get_orbit_from_OC6catalog(char *input_orbit_list,
                                      double *T_periastron, 
                                      double *orbit_equinox,
                                      double *mean_motion, double *a_smaxis, 
-                                     double *Period, char *author2,
-                                     char *refer0, char *refer1)
+                                     double *Period, int *orbit_grade,
+                                     char *author2, char *refer0, char *refer1)
 {
 double Omega_node2, omega_peri2, i_incl2, e_eccent2, T_periastron2; 
 double orbit_equinox2, mean_motion2, a_smaxis2, Period2; 
@@ -471,7 +499,7 @@ FILE *fp_in;
 char in_line1[300];
 int iline, is_master_file, line_length, status, comp2_is_AB;
 
-really_compact_companion(comp_name1, comp1_really_compacted, 40);
+jlp_really_compact_companion(comp_name1, comp1_really_compacted, 40);
 
 /* Open input file containing the orbital parameters: */
 if((fp_in = fopen(input_orbit_list, "r")) == NULL) {
@@ -508,20 +536,21 @@ while(!feof(fp_in)){
                                  comp_name2, object_name2, author2, 
                                  &Omega_node2, &omega_peri2, &i_incl2, 
                                  &e_eccent2, &T_periastron2, &Period2, 
-                                 &a_smaxis2, &mean_motion2, &orbit_equinox2);
+                                 &a_smaxis2, &mean_motion2, &orbit_equinox2,
+                                 orbit_grade);
      if(status) {
       fprintf(stderr, "get_orbit_from_OC6catalog/WARNING: error reading orbital parameters in line #%d (status=%d)\n", iline, status); 
       } else {
-      compact_string(object_name2, 60);
+      jlp_compact_string(object_name2, 60);
 /* Check if AB companion (default) or something else */
       comp2_is_AB = 0;
       if((comp_name2[0] == '\0') || !strcmp(comp_name2,"AB")
          || !strncmp(comp_name1,"Aa-B",4)) comp1_is_AB = 1;
 // JLP2020: reduce the name if comp_is_AB is true:
       if(comp2_is_AB == 1) remove_AB_from_object_name(object_name2);
-      if(!strcmp(object_name1, object_name2)) {
-// Companion not used yet...
-        really_compact_companion(comp_name2, comp2_really_compacted, 40);
+      jlp_really_compact_companion(comp_name2, comp2_really_compacted, 40);
+      if(!strcmp(object_name1, object_name2)
+         && !strcmp(comp1_really_compacted, comp2_really_compacted)) {
         *Omega_node = Omega_node2;
         *omega_peri = omega_peri2; 
         *i_incl = i_incl2;

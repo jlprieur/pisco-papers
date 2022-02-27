@@ -7,25 +7,32 @@
 * derived from astromp_calib, with more possibilities for the eyepieces
 * with a parameter file
 *
-* Format of input files:
-\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|}
-& Name  & Epoch & Filter & Eyep. & $\rho$ & $\sigma_\rho$ & $\theta$ &
-$\sigma_\theta$ & comments \\
- &       &       &        & (mm)
-& (pixels) & (pixels) & (deg.) & (deg.) & \\
-\hline % -----------------------------------------------------------------------
+* Gili's format of input file, from Gdpisco, old version (in_astrom_fmt=1) :
+\hline % -------------------------------------------------------------
+14595+1753 = COU188 &  & 2013 & & & & & & &  WY=2010 WT=227 WR=0.3 \\
 %%
-16564+6502 = STF 2118 AB & ADS 10279 & 2004. & & & & & & & orb \\
-%%
-%% 090904_ads10279_Vd_a
-%% Thresholds: -1,8
-%% rho_center=14.62 (+/-1.87) theta_center=156.71 (+/-7.32)or theta=-23.29
-%% rho_center=14.72 theta_center=156.70  or theta = -23.30
-%% rho_center=14.37 (+/-1.89) theta_center=-23.64 (+/-7.54)
-%% rho_center=14.34 theta_center=-23.73
-%% mean: rho = 14.50 \pm 0.17  theta = -23.61 \pm 0.27 (too small -> 0.3)(n=8)
-& 090904\_ads10279\_Vd\ & 09/09/2004 & V & 20 & 14.50 & 0.17 & -23.61 & 0.3 & \\
+%% Input file: cou188_a.fits
+%% Back to original image
 ....
+\hline % -------------------------------------------------------------
+15186+2356 = COU307 &  & 2013 & & & & & & & orb WY=2010 WT=3 WR=0.4 \\
+*
+* Calern format of input file, from Gdpisco, new version (in_astrom_fmt = 2):
+\hline % -------------------------------------------------------------
+00226+5417 = A907 & 2017 & & & & & & & WY=2016 WT=211 WR=0.8 \\
+%%
+%% Input file: 090117_a907_R_a.fits
+%% rho=19.18 theta=-56.77 xc=117.49 yc=144.04 (117.6,144.2,7.5,3) Bary.
+...
+& 090117\_a907\_R\_a & 09/01/2017 & R & 20 & 19.16 & 0.10 & -56.88 & 0.3 & EP=2017.0264  Dm=0.00+/-0.02\\
+*
+* The only difference of the astrom input files is an empty (ADS) column 
+* for Gili's files and the orb information on the last column for Calern files
+*
+* in_astrom_fmt = 1 (Gili, with WDS=name, Empty ADS col, Epoch, ...)
+* in_astrom_fmt = 2 (Calern, with WDS=name, Epoch, ...)               
+* out_calib_fmt = 1 (Gili, with WDS, Name, Epoch, Eyepiece, rho, err_rho, ...)
+* out_calib_fmt = 2 (Calern, with WDS, Name, Epoch, Filter, Eyepiece, rho, err_r
 *
 Keywords in the notes:
 EP=2004.133 (epoch)
@@ -36,13 +43,13 @@ Q=2         (Quadrant with restricted triple-correplation)
 LQ=3        (Quadrant with long integration)
 *
 * JLP
-* Version 02/04/2019
+* Version 15/09/2021
 *************************************************************************/
 #include "astrom_utils1.h" 
 #include "astrom_utils2.h" 
 
-static int read_calib_file_gili(char *filecalib, double *calib_scale1, 
-                           int *calib_eyepiece1, int*n_eyepieces1,
+static int read_calib_file(char *filecalib, double *calib_scale1, 
+                           int *calib_eyepiece1, int *n_eyepieces1,
                            double *sign, double *theta0);
 
 int main(int argc, char *argv[])
@@ -52,22 +59,22 @@ int i, calib_eyepiece1[3], n_eyepieces1 = 3;
 char filein[128], fileout[128], filecalib[128];
 int i_filename, i_date, i_filter, i_eyepiece, i_rho, i_drho, i_theta, i_dtheta; 
 int i_notes, comments_wanted, publi_mode, input_with_header, status;
-int gili_format;
+int in_astrom_fmt = 1, out_calib_fmt = 1;
 FILE *fp_in, *fp_out;
 
 /* If command line with "runs" */
 if(argc == 7){
- if(*argv[4]) argc = 5;
+ if(*argv[5]) argc = 6;
+ else if(*argv[4]) argc = 5;
  else if(*argv[3]) argc = 4;
  else if(*argv[2]) argc = 3;
  else if(*argv[1]) argc = 2;
  else argc = 1;
  }
 
-
-if(argc != 5)
+if(argc != 6)
   {
-  printf(" Syntax: astrom_calib calibration_file calib_file in_file out_file comments_wanted,publi_mode,input_with_header \n");
+  printf(" Syntax: astrom_calib calibration_file in_file out_file comments_wanted,publi_mode,input_with_header \n");
   printf(" out_rho = in_rho * scale_bin1  (or in_rho * 2 * scale_bin1 if bin=2)\n");
   printf(" out_theta = in_theta * sign + theta0 \n");
 /*
@@ -78,8 +85,10 @@ if(argc != 5)
   printf(" publi_mode = 1 (calibrated and ready for publication)\n");
   printf(" input_with_header = 0 (input LaTeX file without header)\n");
   printf(" input_with_header = 1 (input LaTeX file with header)\n");
-  printf(" Example: runs astrom_calib gili_calib.txt astrom05a.tex tab_calib.tex 0,1,0  (without comments, publication mode, input file without header)\n");
-  printf(" Example: runs astrom_calib gili_calib.txt astrom05a.tex tab_calib.tex 1,0,1  (with comments, no publication, input file with header)\n");
+  printf(" Example: runs astrom_calib gili_calib.txt astrom05a.tex tab_calib.tex 0,1,0  (without comments, publication mode, input file without header) in_astrom_fmt,out_calib_fmt \n");
+  printf(" Example: runs astrom_calib gili_calib.txt astrom05a.tex tab_calib.tex 1,0,1  (with comments, no publication, input file with header) 1 \n");
+  printf(" in_astrom_fmt: 1 if (Gili) empty ADS column, 2 if (Calern) no ADS column\n");
+  printf(" out_calib_fmt: 1 if (Gili) no filt column, 2 if (Calern) filter columnbut\n");
   exit(-1);
   }
 else
@@ -88,20 +97,21 @@ else
   strcpy(filein,argv[2]);
   strcpy(fileout,argv[3]);
   sscanf(argv[4],"%d,%d,%d", &comments_wanted, &publi_mode, &input_with_header);
+  sscanf(argv[5],"%d,%d", &in_astrom_fmt, &out_calib_fmt);
   }
 
 // Read calibration file:
- status = read_calib_file_gili(filecalib, calib_scale1, calib_eyepiece1, 
-                               &n_eyepieces1, &sign, &theta0);
+ status = read_calib_file(filecalib, calib_scale1, calib_eyepiece1, 
+                          &n_eyepieces1, &sign, &theta0);
  if(status != 0) return(-1);
 for(i = 0; i < n_eyepieces1; i++) {
-  printf(" OK: out_rho = in_rho * %g (for bining=%d )\n", 
+  printf(" OK: out_rho = in_rho * %g (for %d mm eyepiece or bining=%d)\n",
          calib_scale1[i], calib_eyepiece1[i]);
   }
 printf(" OK: out_theta = in_theta * %g + %g \n", sign, theta0);
 printf(" OK: filein=%s fileout=%s \n", filein, fileout);
-printf(" OK: comments_wanted=%d publi_mode=%d input_with_header=%d\n",
-       comments_wanted, publi_mode, input_with_header);
+printf(" OK: comments_wanted=%d publi_mode=%d input_with_header=%d in_astrom_fmt=%d out_calib_fmt=%d\n",
+       comments_wanted, publi_mode, input_with_header, in_astrom_fmt, out_calib_fmt);
 
 if((fp_in = fopen(filein,"r")) == NULL)
 {
@@ -116,17 +126,17 @@ fclose(fp_in);
 exit(-1);
 }
 fprintf(fp_out,"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n");
-fprintf(fp_out,"%%%% Automatic calibration of %s with astrom_calib_gili\n", filein);
-fprintf(fp_out,"%%%% JLP / Version of 23/09/2008 \n");
+fprintf(fp_out,"%%%% Automatic calibration of %s with astrom_calib\n", filein);
+fprintf(fp_out,"%%%% JLP / Version of 23/09/2020 \n");
 for(i = 0; i < n_eyepieces1; i++) {
-  fprintf(fp_out,"%%%% out_rho = in_rho * %g (for binning=%d)\n", 
+  fprintf(fp_out,"%%%% out_rho = in_rho * %g (for eyepiece/binning=%d)\n", 
          calib_scale1[i], calib_eyepiece1[i]);
   }
 fprintf(fp_out,"%%%% out_theta = in_theta * %g + %g \n", sign, theta0);
 fprintf(fp_out,"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n");
 
 if(publi_mode == 1) {
-  fprintf(fp_out,"%%%% File automatically generated with astrom_calib_gili (Version 16/02/2020)\n");
+  fprintf(fp_out,"%%%% File automatically generated with astrom_calib_gili (Version 16/09/2020)\n");
   fprintf(fp_out,"%%%% Convention for Papers of R. Gili (Nice): \n");
   fprintf(fp_out,"%%%% Publication mode: only direct measurement is kept when rho > 0.3\" \n");
   fprintf(fp_out,"%%%% Weighted mean between direct and recorded measurements when rho <= 0.3\" \n");
@@ -147,17 +157,19 @@ if(publi_mode == 1) {
 *  theta in column 8
 *  dtheta in column 9
 */
-// Example:
-// & a153b\_aw & 23/07/2011 &  & 2 & 4.30 & 0.11 & -4.69 & 1.3 & EP=2011.5567 XYBIN=2,2 Q=3 \\
+// Example of input line of measures (output line created by Gdpisco.exe):
+// mean: rho = 27.78 \pm 0.00 (too small->0.1) theta = 22.85 \pm 0.00 (too small->0.3) (n=1)
+// mean: Dmag = 4.66 \pm 0.00 (too small->0.02) (n=1)
+// & rst5109ly\_c10w & 17/08/2013 &  & 1 & 27.78 & 0.10 & 22.85 & 0.3 & EP=2013.6290  Dm=4.66+/-0.02\\\
   i_filename = 2; // ex: "a153\aw"
-  i_date = 3; // ex: "28/07/2011"
+  i_date = 3; // ex: "28/08/2013"
   i_filter = 4; // ex: ""
-  i_eyepiece = 5; // bin factor, ex: "2"
-  i_rho = 6; // ex: "4.30"
-  i_drho = 7; // ex: "0.11"
-  i_theta = 8; // ex: "-4.69"
-  i_dtheta = 9; // ex: "1.3"
-  i_notes = 10; // ex: EP=2011.5567 XYBIN=2,2 Q=3
+  i_eyepiece = 5; // bin factor, ex: "1"
+  i_rho = 6; // ex: "27.78"
+  i_drho = 7; // ex: "0.10"
+  i_theta = 8; // ex: "22.85"
+  i_dtheta = 9; // ex: "0.3"
+  i_notes = 10; // ex: EP=2013.5567 Dm=4.66 XYBIN=2,2 Q=3
 /* Version "publi", to generate a laTeX array formatted for publication:
 * sort out the objects, compute mean values, perform calibration, etc.
 *
@@ -165,17 +177,29 @@ if(publi_mode == 1) {
 * copy mode: 1,0,0 with raw astrom file
 */ 
   if(publi_mode == 1) {
-  gili_format = 1;
-  astrom_calib_publi(fp_in,fp_out, calib_scale1, calib_eyepiece1, n_eyepieces1,
+/*
+* in_astrom_fmt : =1 if (Gili) empty ADS column, no orb info
+* 22388+4419 = HO 295 AB &  & 2004. & & & & & & & \\
+*                 =2 if (Calern) no ADS column, no orb info
+* 22388+4419 = HO 295 AB & 2004. & & & & & & & \\
+* in_astrom_fmt = 1 (Gili, with WDS=name, Empty ADS col, Epoch, ...)
+* in_astrom_fmt = 2 (Calern, with WDS=name, Epoch, ...)               
+* out_calib_fmt = 1 (Gili, with WDS, Name, Epoch, Eyepiece, rho, err_rho, ...)
+* out_calib_fmt = 2 (Calern, with WDS, Name, Epoch, Filter, Eyepiece, rho, err_r
+*/
+// gili_format: in_astrom_fmt=1
+// calern_format: in_astrom_fmt=2
+  printf("Will run astrom_calib_publi with in_astrom_fmt=%d\n", in_astrom_fmt);
+  astrom_calib_publi(fp_in, fp_out, calib_scale1, calib_eyepiece1, n_eyepieces1,
                      theta0, sign, 
                      i_filename, i_date, i_filter, i_eyepiece, i_rho, i_drho, 
                      i_theta, i_dtheta, i_notes, comments_wanted, filein,
-                     gili_format);
+                     in_astrom_fmt, out_calib_fmt);
 /* Version "copy", to copy all the contents, and simply convert the 
 * measurements to arcseconds and degrees relative to North 
 */ 
   } else { 
-  astrom_calib_copy(fp_in,fp_out, calib_scale1, calib_eyepiece1, n_eyepieces1,
+  astrom_calib_copy(fp_in, fp_out, calib_scale1, calib_eyepiece1, n_eyepieces1,
                     theta0, sign, 
                     i_date, i_eyepiece, i_rho, i_drho, i_theta, i_dtheta,
                     comments_wanted, input_with_header);
@@ -206,7 +230,7 @@ sign = 1.
 theta0 = 89.0
 
 ***************************************************************************/
-static int read_calib_file_gili(char *filecalib, double *calib_scale1, 
+static int read_calib_file(char *filecalib, double *calib_scale1, 
                            int *calib_eyepiece1, int*n_eyepieces1,
                            double *sign, double *theta0)
 {
@@ -230,7 +254,22 @@ jval = 0;
    if(fgets(buffer, 256, fp_calib)) {
 // Comments start with % or #
      if((buffer[0] != '%') && (buffer[0] != '#')) {
-       if(!strncmp(buffer, "bin1 =", 6)) {
+       if(!strncmp(buffer, "10mm =", 6)) {
+         sscanf(&buffer[6], "%lf", &scale0);
+         calib_scale1[ival] = scale0;
+         calib_eyepiece1[ival] = 10;
+         ival++;
+       } else if(!strncmp(buffer, "20mm =", 6)) {
+         sscanf(&buffer[6], "%lf", &scale0);
+         calib_scale1[ival] = scale0;
+         calib_eyepiece1[ival] = 20;
+         ival++;
+       } else if(!strncmp(buffer, "32mm =", 6)) {
+         sscanf(&buffer[6], "%lf", &scale0);
+         calib_scale1[ival] = scale0;
+         calib_eyepiece1[ival] = 32;
+         ival++;
+       } else if(!strncmp(buffer, "bin1 =", 6)) {
          sscanf(&buffer[6], "%lf", &scale0);
          calib_scale1[ival] = scale0;
          calib_eyepiece1[ival] = 1;

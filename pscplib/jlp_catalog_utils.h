@@ -16,6 +16,9 @@
 #include <math.h>
 #include <time.h>                    /* date */
 
+#ifndef MAXI
+#define MAXI(a,b) ((a) < (b)) ? (b) : (a)
+#endif
 #ifndef ABS
 #define ABS(a) ((a) < 0.0  ? (-(a)) : (a))
 #endif
@@ -32,12 +35,10 @@ extern "C" {
 #endif
 
 int is_in_line(char *line_buffer2, char *str1);
-int latex_get_column_item(char *in_line, char *item, int icol, 
-                          int verbose_if_error);
 int get_values_from_RESID_table(char *resid_fname, char *object_name,
                                 char *comp_name, double epoch_o, double rho_o,
-                                char *orbit_ref, int ref_slength,
-                                double *rho_o_c, 
+                                char *orbit_ref, int *orbit_grade, 
+                                int ref_slength, double *rho_o_c, 
                                 double *theta_o_c, char *quadrant_discrep,
                                 int *norbits_found, int nmax_orbits);
 int read_values_from_RESID_line(char *in_line, double *epoch_o_c,
@@ -52,13 +53,14 @@ int get_measures_from_CALIB_table_gili(char *calib_fname, char *object_name,
                                   char *comp_name, double *epoch_o, 
                                   double *rho_o, double *theta_o,
                                   double *err_rho_o, double *err_theta_o, 
-                                  int *nmeas);
+                                  int *nmeas, int gili_format);
 int read_measures_from_CALIB_line(char *line_buffer, double *epoch, 
                                    double *rho, double *err_rho,
                                    double *theta, double *err_theta);
 int read_measures_from_CALIB_line_gili(char *line_buffer, double *epoch, 
                                    double *rho, double *err_rho,
-                                   double *theta, double *err_theta);
+                                   double *theta, double *err_theta,
+                                   int gili_format);
 int read_object_name_from_CALIB_line(char *in_line, char *wds_name,
                                      char *discov_name, char *comp_name,
                                      char *ads_name);

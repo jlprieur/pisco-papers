@@ -10,6 +10,8 @@
 * Version 03/05/2009
 *************************************************************************/
 #include "jlp_catalog_utils.h"
+#include "WDS_catalog_utils.h"
+#include "jlp_string.h"  // jlp_compact_string
 
 #define DEBUG
 #define DEBUG_1
@@ -132,10 +134,10 @@ while(!feof(fp_calib)) {
       read_object_name_from_CALIB_line(in_line, wds_name, discov_name,
                                        comp_name, ads_name);
 /* Remove the extra-blanks: */
-      trim_string(wds_name, 64);
-      trim_string(ads_name, 64);
-      trim_string(discov_name, 64);
-      trim_string(comp_name, 64);
+      jlp_trim_string(wds_name, 64);
+      jlp_trim_string(ads_name, 64);
+      jlp_trim_string(discov_name, 64);
+      jlp_trim_string(comp_name, 64);
 
 // New: after 2018, now also read the measurements
 // to be able to plot Delta mag versus rho measurements...
@@ -161,7 +163,7 @@ while(!feof(fp_calib)) {
 
 /* Photometric data: */
          if(found_in_WDS && (paral_rel_error0 < 0)) {
-              compact_string(discov_name, 20);
+              jlp_compact_string(discov_name, 20);
             if(found_in_Hip_cat) {
               fprintf(fp_out, "%.3f %.3f %.3f %.3f %.3f %s %s\n",
                       magV, magV_A, B_V_index, ABS(magV_A - magV_B),
@@ -188,7 +190,7 @@ while(!feof(fp_calib)) {
 /* Parallax in mas: */
                 magV_abs = magV + 5. * log10(paral * 0.001) + 5.;
                 magV_A_abs = magV_A + 5. * log10(paral * 0.001) + 5.;
-                compact_string(discov_name, 20);
+                jlp_compact_string(discov_name, 20);
                 fprintf(fp_out, "%.3f %.3f %.3f %.3f %.3f %.3f %s %s\n",
                         magV, magV_A, B_V_index, ABS(magV_A - magV_B), 
                         magV_abs, magV_A_abs, discov_name, spectral_type);

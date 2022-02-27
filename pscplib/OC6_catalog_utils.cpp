@@ -76,172 +76,22 @@ int get_orbit_from_OC6_list(char *in_line, int iline, int is_master_file,
                        double *Omega_node, double *omega_peri, double *i_incl, 
                        double *e_eccent, double *T_periastron, double *Period, 
                        double *a_smaxis, double *mean_motion, 
-                       double *orbit_equinox)
+                       double *orbit_equinox, int *orbit_grade)
 {
 char buffer[80];
 int nval;
 double ww;
 
-#ifdef DEBUG
-printf("get_orbit_from_OC6_list/iline=%d\n %s", iline, in_line);
-#endif
-/* Retrieve the object designation and the author of the orbit
-*/
-strncpy(WDS_name, &in_line[19], 10);
-WDS_name[10] = '\0';
-
-/* Discover's name in fixed format with 7 characters (like with the WDS) */
-strncpy(discov_name, &in_line[30], 7);
-discov_name[7] = '\0';
-
-strncpy(comp_name, &in_line[37], 7);
-comp_name[7] = '\0';
-/* Remove all blanks: */
-jlp_compact_string(comp_name, 10);
+get_orbit_from_OC6_list_gili(in_line, iline, is_master_file, WDS_name, 
+                             discov_name, comp_name, object_name, author, 
+                             Omega_node, omega_peri, i_incl, e_eccent, 
+                             T_periastron, Period, a_smaxis, mean_motion, 
+                             orbit_equinox, orbit_grade);
 
 strncpy(ADS_name, &in_line[45], 5);
 ADS_name[5] = '\0';
 /* Remove all blanks: */
 jlp_compact_string(ADS_name, 40);
-
-/* Period: */
-strncpy(buffer, &in_line[80], 11);
-buffer[11] = '\0';
-if(sscanf(buffer, "%lf", Period) != 1) {
-  fprintf(stderr, "\nWDS=%s Error reading period: buffer=%s\n", WDS_name, buffer);
-  return(-1);
-  }
-
-/* Units: minutes, hours, days, centuries, or years */
-if(in_line[92] == 'm') 
-  *Period /= (365.25 * 24. * 60.);
-else if(in_line[92] == 'h') 
-  *Period /= (365.25 * 24.);
-else if(in_line[92] == 'd') 
-  *Period /= 365.25;
-else if(in_line[92] == 'c') 
-  *Period *= 100.;
-else if(in_line[92] != 'y') 
-  {
-  fprintf(stderr, "\nError reading period of %s: unknown unit (P=%.20s unit=%c)\n", 
-          WDS_name, &in_line[81], in_line[92]);
-  return(-1);
-  }
-
-/* Semi-major axis: */
-strncpy(buffer, &in_line[105], 9);
-buffer[9] = '\0';
-*a_smaxis = 0.;
-if((nval = sscanf(buffer, "%lf", a_smaxis)) != 1) {
-  fprintf(stderr, "\nError reading semi-major axis: nval=%d buffer=%s\n", 
-          nval, buffer);
-  fprintf(stderr, "iline=%d a_smaxis=%f inline=%s\n", iline, *a_smaxis, in_line);
-  return(-1);
-  }
-/* Units: milliarcseconds or arcseconds */
-if(in_line[114] == 'm') 
-  *a_smaxis *= 1000.;
-else if(in_line[114] != 'a') 
-  {
-  fprintf(stderr, "\nError reading semi-major axis: unknown unit (a=%.20s unit=%c)\n", 
-          &in_line[105], in_line[114]);
-  return(-1);
-  }
-
-/* Inclination (degrees) */
-strncpy(buffer, &in_line[125], 8);
-buffer[8] = '\0';
-if(sscanf(buffer, "%lf", i_incl) != 1) {
-  fprintf(stderr, "\nError reading inclination: buffer=%s\n", buffer);
-  return(-1);
-  }
-
-/* Node, Omega (degrees) */
-strncpy(buffer, &in_line[143], 8);
-buffer[8] = '\0';
-if(sscanf(buffer, "%lf", Omega_node) != 1) {
-  fprintf(stderr, "\nError reading Omega (node): buffer=%s\n", buffer);
-  return(-1);
-  }
-
-/* T of periastron passage */
-strncpy(buffer, &in_line[162], 12);
-buffer[12] = '\0';
-if(sscanf(buffer, "%lf", T_periastron) != 1) {
-  fprintf(stderr, "\nWDS_name=%s /error reading T periastron: buffer=%s\n", 
-          WDS_name, buffer);
-  return(-1);
-  }
-/* Units: modified Julian date or fractionnal Besselian year */
-/* The time of periastron passage (T0) and code for units:
-                            d = Julian date (-2,400,000 days)
-                            m = modified Julian date (MJD = JD-2,400,000.5 days)
-                            y = fractional Besselian year
-*/
-
-/*
-printf("JLPPPDDEBUG: ADS_name=%s raw periastron = %f yr (unit=%c)\n", 
-        ADS_name, *T_periastron, in_line[174]);
-*/
-
-/* Modified JD: JD - 2400000
-*  reduced JD:  JD - 2400000.5
-*/
-if(in_line[174] == 'm')
-  {
-/* JLP 2015... */
-  *T_periastron = 1900.0 + (*T_periastron - 15020.31352 - 0.5) / 365.242198781; 
-  }
-else if(in_line[174] == 'd')
-  {
-/* d = modified Julian date (JulianDate - 2,400,000 days) */
-/* Bessel epoch = 1900.0 + (JulianDate - 2415020.31352) / 365.242198781 */
-  *T_periastron = 1900.0 + (*T_periastron - 15020.31352) / 365.242198781; 
-  }
-else if(in_line[174] != 'y') 
-  {
-  fprintf(stderr, "\nError reading T_periastron: unknown unit (P=%.20s unit=%c)\n", 
-          &in_line[162], in_line[174]);
-  return(-1);
-  }
-
-/* Eccentricity */
-strncpy(buffer, &in_line[187], 8);
-buffer[8] = '\0';
-if(sscanf(buffer, "%lf", e_eccent) != 1) {
-  fprintf(stderr, "\nError reading eccentricity: buffer=%s\n", buffer);
-  return(-1);
-  }
-
-/* omega (longitude of periastron) */
-strncpy(buffer, &in_line[205], 8);
-buffer[8] = '\0';
-if(sscanf(buffer, "%lf", omega_peri) != 1) {
-  fprintf(stderr, "\nError reading omega_periastron: buffer=%s\n", buffer);
-  return(-1);
-  }
-
-/* Equinox */
-strncpy(buffer, &in_line[223], 4);
-buffer[4] = '\0';
-/* Default value is 2000.0 */
-if(sscanf(buffer, "%lf", orbit_equinox) != 1) {
-  *orbit_equinox = 2000.0;
-}
-
-/* Reference of orbit (author) */
-if(is_master_file) 
-   strncpy(author, &in_line[251], 8);
-  else
-   strncpy(author, &in_line[237], 8);
-author[8] = '\0';
-/* Remove heading and trailing blanks: */
-jlp_trim_string(author, 60);
-
-/*
-printf("JLPPPDDEBUG: ADS_name=%s periastron = %f yr (unit=%c, author=%s)\n", 
-        ADS_name, *T_periastron, in_line[174], author);
-*/
 
 /* Restriction of the object name to ADS name or discoverer name */
 if(ADS_name[0] != '\0' && ADS_name[0] != '.') 
@@ -249,19 +99,9 @@ if(ADS_name[0] != '\0' && ADS_name[0] != '.')
 else if (discov_name[0] != '\0') strcpy(object_name, discov_name);
 
 #ifdef DEBUG_1
-printf("Object=%s WDS=%s ADS=%s discov=%s comp=%s author=%s\n",
+printf("DEBUG/Object=%s WDS=%s ADS=%s discov=%s comp=%s author=%s\n",
         object_name, WDS_name, ADS_name, discov_name, comp_name, author);
-
- printf("Omega_node=%.3f omega_peri=%.3f incl=%.3f e=%.4f T=%.3f P=%.3f a=%.5f Equinox=%.3f\n", 
-        *Omega_node, *omega_peri, *i_incl, *e_eccent, *T_periastron, 
-        *Period, *a_smaxis, *orbit_equinox);
 #endif
-
-/* Conversion to radians: */
- *Omega_node *= DEGTORAD;
- *omega_peri *= DEGTORAD;
- *i_incl *= DEGTORAD;
- *mean_motion = (360.0 / *Period) * DEGTORAD;
 
 return(0);
 }
@@ -291,6 +131,45 @@ return(0);
 111810.90+313145.0 11182+3132 STF1523AB       8119  98231  55203   4.33   4.80     60.72    y    .         3.278  a   .       56.10      .      97.78       .      1816.73    y    .       0.3777    .       134.37      .          1827           6.0 n n HJ_1833b
 111810.90+313145.0 11182+3132 STF1523AB       8119  98231  55203   4.33   4.80     60.4596  y    .         2.290  a   .       52.26      .      95.01       .      1816.95    y    .       0.404     .       129.68      .          1836 1836-46   6.0 n n Mad1837
 
+* http://www.astro.gsu.edu/wds/orb6/orb6format.txt
+*
+  column  format           description
+    1    T1,2I2,F5.2,     epoch-2000 right ascension (hours, minutes, seconds).
+         A1,2I2,f4.1      epoch-2000 declination (degrees, minutes, seconds).
+    2    T20,A10          WDS designation (based on arcminute-accuracy epoch-
+                          2000 coordinates).
+    3    T31,A14          Discover designation and components, or other catalog 
+                          designation.
+    4    T46,I5           ADS (Aitken Double Star catalog) number.
+    5    T52,I6           HD catalog number.
+    6    T59,I6           Hipparcos catalog number.
+    7    T67,F5.2,A1      Magnitude of the primary (usually V), and flag:
+                            > = fainter than quoted magnitude
+                            < = brighter than quoted magnitude 
+                            v = variable magnitude
+                            k = magnitude is in K-band or other infrared band
+                            ? = magnitude is uncertain
+    8    T74,F5.2,A1      Magnitude of the secondary (usually V), and flag:
+                            > = fainter than quoted magnitude
+                            < = brighter than quoted magnitude 
+                            v = variable magnitude
+                            k = magnitude is in K-band or other infrared band
+                            ? = magnitude is uncertain
+    9    T82,F11.6,A1     Period (P) and code for units:
+                            m = minutes (not yet used!)
+                            h = hours (not yet used!)
+                            d = days
+                            y = years
+                            c = centuries (rarely used)
+....
+
+    25    T234,I1          Orbit grade, ranging from 1 ("definitive") to 5 
+                          ("indeterminate"). Additionally, a grade of 8 is used
+                          for interferometric orbits based on visibilities 
+                          rather than rho and theta measures (hence not gradable
+                          by the present scheme) and a grade of 9 indicates an
+                          astrometric binary (also lacking rho and theta data).
+
 *
 *
 * INPUT:
@@ -310,19 +189,29 @@ int get_orbit_from_OC6_list_gili(char *in_line, int iline, int is_master_file,
                        double *Omega_node, double *omega_peri, double *i_incl, 
                        double *e_eccent, double *T_periastron, double *Period, 
                        double *a_smaxis, double *mean_motion, 
-                       double *orbit_equinox)
+                       double *orbit_equinox, int *orbit_grade)
 {
 char buffer[80];
 int nval;
 double ww;
 
 #ifdef DEBUG
-printf("get_orbit_from_OC6_list/iline=%d\n %s", iline, in_line);
+printf("get_orbit_from_OC6_list_gili/iline=%d\n %s", iline, in_line);
 #endif
 /* Retrieve the object designation and the author of the orbit
 */
 strncpy(WDS_name, &in_line[19], 10);
 WDS_name[10] = '\0';
+
+#ifdef DEBUG_1
+printf("Discov_name: %.7s comp=%.7s \n", &in_line[30], &in_line[37]);
+printf("Period=%.11s unit=%c \n", &in_line[80], in_line[92]);
+printf("semi-major axis: a=%.20s unit=>%c< \n", &in_line[105], in_line[114]);
+printf("Inclination i=%.8s (deg) \n", &in_line[125]);
+printf("Omega Node=%.8s (deg) \n", &in_line[143]);
+printf("Longitude of periastron, omega=%.8s (deg) \n", &in_line[205]);
+printf("Orbit grade=%.2s \n", &in_line[233]);
+#endif
 
 /* Discover's name in fixed format with 7 characters (like with the WDS) */
 strncpy(discov_name, &in_line[30], 7);
@@ -370,7 +259,7 @@ if((nval = sscanf(buffer, "%lf", a_smaxis)) != 1) {
   }
 /* Units: milliarcseconds or arcseconds */
 if(in_line[114] == 'm') 
-  *a_smaxis *= 1000.;
+  *a_smaxis /= 1000.;
 else if(in_line[114] != 'a') 
   {
   fprintf(stderr, "\nError reading semi-major axis: unknown unit (a=%.20s unit=%c)\n", 
@@ -408,6 +297,17 @@ if(sscanf(buffer, "%lf", T_periastron) != 1) {
                             m = modified Julian date (MJD = JD-2,400,000.5 days)
                             y = fractional Besselian year
 */
+
+/* Orbit grade: */
+strncpy(buffer, &in_line[233], 1);
+buffer[1] = '\0';
+*orbit_grade = -1;
+if(sscanf(buffer, "%d", orbit_grade) != 1) {
+/********** DEBUG:
+  fprintf(stderr, "WDS_name=%s /error reading Orbit grade: buffer=%s\n", 
+          WDS_name, buffer);
+******/
+  }
 
 /*
 printf("JLPPPDDEBUG: WDS_name=%s raw periastron = %f yr (unit=%c)\n", 
@@ -548,8 +448,8 @@ strcpy(compacted_discov_name, discov_name);
 jlp_compact_string(compacted_discov_name, 40);
 
 #ifdef DEBUG
- printf("CURRENT OBJECT: ads_name=%s comp_name=%s discov_name=%s \n", 
-ads_name, comp_name, discov_name);
+ printf("CURRENT OBJECT: ads_name=%s comp_name=%s discov_name=%s (discov_name_only=%d\n", 
+ads_name, comp_name, discov_name, discov_name_only);
 #endif
 
 /* Open OC6 catalog: */
@@ -593,7 +493,7 @@ if(iline < nlines_in_header+3)
 /* If "ads_name" was found, copy the full line containing 
 * the orbital elements: */
      jlp_compact_string(OC6_ads_name, 60);
-/* CASE 1 */
+/* CASE 1 : no ADS name*/
     if(discov_name_only){
     if(!strcmp(OC6_discov_name, compacted_discov_name)) {
         for(i = 0; i < 300; i++) 
@@ -738,7 +638,7 @@ strcpy(compacted_discov_name, discov_name);
 jlp_compact_string(compacted_discov_name, 40);
 
 #ifdef DEBUG
- printf("CURRENT OBJECT: comp_name=%s discov_name=%s \n", 
+ printf("(line_ext_OC6_cat_gili) CURRENT OBJECT: comp_name=%s discov_name=%s \n", 
  comp_name, discov_name);
 #endif
 
@@ -780,7 +680,32 @@ if(iline < nlines_in_header+3)
              *found, iline, line_buffer, OC6_discov_name, OC6_comp_name);
 #endif
     if(!strcmp(OC6_discov_name, compacted_discov_name)) {
-        for(i = 0; i < 300; i++) 
+
+/* Test on the companion names if present in the object name:
+*/
+     jlp_compact_string(OC6_comp_name, 40);
+     jlp_really_compact_companion(OC6_comp_name, OC6_comp_really_compacted, 40);
+#ifdef DEBUG_1
+printf("DEBUG/OC6_object=%s OC6_companion=%s| comp=%s| (really compacted: OC6 comp=%s comp=%s)\n",
+        OC6_discov_name, OC6_comp_name, comp_name, OC6_comp_really_compacted,
+        comp_really_compacted);
+#endif
+        comp_is_AB = 0;
+        if((compacted_comp_name[0] == '\0')
+           || !strcmp(compacted_comp_name,"AB")
+           || !strncmp(compacted_comp_name,"Aa-B",4)) comp_is_AB = 1;
+        OC6_comp_is_AB = 0;
+        if((OC6_comp_name[0] == '\0') || !strcmp(OC6_comp_name,"AB")
+           || !strncmp(OC6_comp_name,"Aa-B",4)) OC6_comp_is_AB = 1;
+
+        if((*compacted_comp_name != '\0'
+             && !strcmp(OC6_comp_name, compacted_comp_name))
+/* If not mentionned in Latex calibrated table, should
+* be either not mentioned in OC6 or equal to AB: */
+           || (comp_is_AB && OC6_comp_is_AB)
+           || (*comp_really_compacted != '\0' &&
+               !strcmp(comp_really_compacted, OC6_comp_really_compacted))){
+        for(i = 0; i < 300; i++)
            object_orbits[i + 300*norbits] = line_buffer[i];
         *found = 1;
         norbits++;
@@ -789,6 +714,7 @@ if(iline < nlines_in_header+3)
             fprintf(stderr, "(OC6_discov_name=%s)\n", OC6_discov_name);
             exit(-1);
             }
+         }
       }
     } /* EOF if line > nlines_header */
   } /* EOF if fgets */ 

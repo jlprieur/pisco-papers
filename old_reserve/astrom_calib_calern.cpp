@@ -147,6 +147,8 @@ if(publi_mode == 1) {
 *  theta in column 8
 *  dtheta in column 9
 */
+// Example:
+// & a153b\_aw & 
   i_filename = 2;
   i_date = 3;
   i_filter = 4;
@@ -174,7 +176,7 @@ if(publi_mode == 1) {
 */ 
   } else { 
   astrom_calib_copy(fp_in,fp_out, calib_scale1, calib_eyepiece1, n_eyepieces1,
-                     theta0, sign, 
+                    theta0, sign, 
                     i_date, i_eyepiece, i_rho, i_drho, i_theta, i_dtheta,
                     comments_wanted, input_with_header);
   }
@@ -227,12 +229,12 @@ jval = 0;
        if(!strncmp(buffer, "10mm =", 6)) {
          sscanf(&buffer[6], "%lf", &scale0);
          calib_scale1[ival] = scale0;
-         calib_eyepiece1[ival] = 10;
+         calib_eyepiece1[ival] = 1;
          ival++;
        } else if(!strncmp(buffer, "20mm =", 6)) {
          sscanf(&buffer[6], "%lf", &scale0);
          calib_scale1[ival] = scale0;
-         calib_eyepiece1[ival] = 20;
+         calib_eyepiece1[ival] = 2;
          ival++;
        } else if(!strncmp(buffer, "32mm =", 6)) {
          sscanf(&buffer[6], "%lf", &scale0);

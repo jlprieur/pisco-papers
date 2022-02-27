@@ -1,0 +1,87 @@
+/*************************************************************************
+* Publication mode
+*
+* INPUT:
+* calib_scale1 : scale values, scale_10, scale_20, scale_32
+* calib_eyepiece1 : focal lengths, 10, 20, 32
+* i_filename: column nber of the filename used for this measurement
+* i_eyepiece: column nber of eyepiece focal length information
+* i_rho: column nber with rho values
+* i_drho: column nber with drho values
+* i_theta: column nber with theta values
+* i_dtheta: column nber with dtheta values
+* comments_wanted: 1 if comments are wanted, 0 otherwise
+* 
+* in_astrom_fmt: = 1 if gili_format (ADS column and no orbit in input file)
+*                = 2 if calern_format (no ADS column and no orbit in input file)
+* out_calib_fmt: = 1 if gili_format (no filter column)
+*                = 2 if calern_format (filter column)
+*************************************************************************/
+int astrom_calib_publi(FILE *fp_in, FILE *fp_out,  double *calib_scale1,
+                       int *calib_eyepiece1, int n_eyepieces1, double theta0, 
+                       double sign, int i_filename, int i_date, int i_filter,
+                       int i_eyepiece, int i_rho, int i_drho,
+                       int i_theta, int i_dtheta, int i_notes,
+                       int comments_wanted, char *filein, int in_astrom_fmt,
+                       int out_calib_fmt)
+{
+OBJECT *obj;
+int *index_obj, tabular_only, with_wds_data;
+int i, nobj = 0;
+
+if((obj = (OBJECT *)malloc(NOBJ_MAX * sizeof(OBJECT))) == NULL) {
+  printf("astrom_calib_publi/Fatal error allocating memory space for OBJECT: nobj_max=%d\n", 
+          NOBJ_MAX);
+  exit(-1);
+  }
+// Initialize the number of measurements to zero
+for(i = 0; i < NOBJ_MAX; i++) (obj[i]).nmeas = 0;
+
+if((index_obj = (int *)malloc((NOBJ_MAX) * sizeof(int))) == NULL) {
+  printf("astrom_calib_publi/Fatal error allocating memory space for index_obj: nobj_max=%d\n", 
+          NOBJ_MAX);
+  exit(-1);
+  }
+
+// WDS data has been added previously for the input latex file...
+with_wds_data = 1;
+astrom_read_measures(fp_in, comments_wanted, obj, &nobj, i_filename, i_date, 
+                     i_filter, i_eyepiece, i_rho, i_drho, i_theta, i_dtheta, 
+                     i_notes, with_wds_data, in_astrom_fmt);
+
+#ifdef DEBUG
+printf("Returned by astrom_read_measures: nobj = %d\n", nobj);
+printf("in_astrom_fmt (=1 if gili_format: ADS col.): %d\n", in_astrom_fmt);
+#endif
+
+if(nobj == 0) {
+  fprintf(stderr, "Returned by astrom_read_measures: nobj = %d\n", nobj);
+  return(-1);
+  }
+
+astrom_calibrate_measures(obj, nobj, calib_scale1, calib_eyepiece1, 
+                          n_eyepieces1, theta0, sign);
+
+/* Sort the objects according to their Right Ascension: */
+astrom_ra_sort_objects(obj, index_obj, nobj);
+
+/* Compute mean values for the objects with rho < 0.3" 
+*  and discard all measurements on recorded data if rho >= 0.3" (Merate-Paper II) */
+astrom_mean_for_paper2(obj, nobj);
+
+/* For big tables, should set this parameter to 1: */
+tabular_only = 0;
+// Output in Gili's format (with Dmag)
+ if(out_calib_fmt == 1)
+   astrom_write_publi_table_gili(fp_out, comments_wanted, obj, index_obj, nobj,
+                         tabular_only);
+ else
+   astrom_write_publi_table(fp_out, comments_wanted, obj, index_obj, nobj,
+                         tabular_only);
+
+astrom_compute_statistics(fp_out, obj, nobj, filein);
+
+free(index_obj);
+free(obj);
+return(0);
+}

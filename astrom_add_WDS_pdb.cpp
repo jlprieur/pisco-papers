@@ -1,7 +1,7 @@
 /*************************************************************************
 * astrom_add_WDS_pdb
 * With Pisco data base
-* Program to add WDS name and discoverer's name
+* Program to add WDS name from discoverer's name
 * and the last reported observations in WDS, to astrom files.
 * For instance: WY=2006 WT=12 WR=2.4 (Year, Theta (deg), Rho (arcsec))
 *
@@ -40,7 +40,7 @@ LQ=3        (Quadrant with long integration)
 
 int main(int argc, char *argv[])
 {
-char filein[60], fileout[60], ads_wds_cross[128], wds_cat[128];
+char filein[60], fileout[60], wds_cat[128];
 FILE *fp_in, *fp_out;
 
 /* If command line with "runs" */
@@ -53,10 +53,10 @@ if(argc == 7){
  }
 
 
-if(argc != 5)
+if(argc != 4)
   {
   printf(" Syntax: astrom_add_WDS_pdb in_file out_file WDS_cat ADS_WDS_crossref\n");
-  printf(" Example: runs astrom_add_WDS_pdb in_astrom15a.tex out_astrom15b.tex wdsweb_sum.txt bds2ads2wds.txt\n");
+  printf(" Example: runs astrom_add_WDS_pdb in_astrom15a.tex out_astrom15b.tex wdsweb_sum.txt\n");
   exit(-1);
   }
 else
@@ -64,12 +64,10 @@ else
   strcpy(filein, argv[1]);
   strcpy(fileout, argv[2]);
   strcpy(wds_cat, argv[3]);
-  strcpy(ads_wds_cross, argv[4]);
   }
 
 printf(" OK: filein=%s fileout=%s\n", filein, fileout);
 printf(" OK: WDS_cat=%s\n", wds_cat);
-printf(" OK: ads_wds_cross=%s\n", ads_wds_cross);
 
 if((fp_in = fopen(filein,"r")) == NULL)
 {
@@ -84,13 +82,14 @@ fclose(fp_in);
 exit(-1);
 }
 fprintf(fp_out,"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n");
-fprintf(fp_out,"%%%% WDS names added using %s and %s\n", wds_cat, ads_wds_cross);
-fprintf(fp_out,"%%%% JLP / Version of 25/05/2018 \n");
+fprintf(fp_out,"%%%% WDS names added using %s\n", wds_cat);
+fprintf(fp_out,"%%%% JLP / Version of 19/09/2020 \n");
 fprintf(fp_out,"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n");
 
 /* Scan the file and add various parameters from PISCO catalog:
+* (in pscplib/astrom_utils_pdb.cpp)
 */ 
-  astrom_add_discov_and_WDS(fp_in, fp_out, wds_cat, ads_wds_cross); 
+  astrom_add_WDS_from_discov(fp_in, fp_out, wds_cat); 
 
 fclose(fp_in);
 fclose(fp_out);

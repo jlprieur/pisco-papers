@@ -1,0 +1,57 @@
+##############################################################################
+# Makefile for astrom and orbit source code 
+#
+# JLP
+# Version 02/07/2018
+##############################################################################
+
+##############################################
+mylib=$(JLPLIB)/jlp
+CPP = c++
+JLIB=$(mylib)/newplot0.a $(mylib)/jlp_wxplot.a $(mylib)/jlp_splot.a \
+	$(mylib)/jlp_fits.a $(mylib)/libcfitsio.a $(mylib)/jlp_fits.a \
+        $(mylib)/jlp_splot_idv.a $(mylib)/jlp_splot.a \
+        $(mylib)/jlpacc.a $(mylib)/jlp_numeric.a 
+
+WX_LIB := `wx-config --libs base,core`
+myjlib=$(JLPSRC)/jlplib
+CFLAGS = -g -I$(myjlib)/jlp_fits -I$(myjlib)/jlp_numeric \
+	-I$(myjlib)/jlp_cfitsio/incl -I$(myjlib)/jlp_splot_idv \
+	-I$(myjlib)/jlp_splot -I$(myjlib)/jlp_gsegraf/jlp_gsegraf_include
+
+.SUFFIXES:
+.SUFFIXES:  .o .c.cpp .for .exe $(SUFFIXES) 
+
+.cpp.exe:
+	$(CPP) -c $(CFLAGS) $*.cpp
+	$(CPP) $(CFLAGS) -o $(EXEC)/$*.exe $*.o $(CATALOG_OBJ) \
+	$(ASTROM_OBJ) \
+	$(MATHLIB) $(JLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
+	rm $*.o
+
+.c.exe:
+	$(CC) -c $(CFLAGS) $*.c
+	$(CC) $(CFLAGS) -o $(EXEC)/$*.exe $*.o $(CATALOG_OBJ) \
+	$(ASTROM_OBJ) \
+	$(MATHLIB) $(JLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm 
+	rm $*.o
+
+.for.exe:
+#	$(EXEC)/esoext1.exe -I ../jlpsub -f $*.for
+	$(F77) -c $(FFLAGS) $*.for
+	$(F77) $(FFLAGS) -o $(EXEC)/$*.exe $*.o \
+	$(MATHLIB) $(JLIB) $(MATHLIB) $(XLIB) $(WX_LIB) $(LIBC) -lm
+	rm $*.o
+
+#.o.exe:
+#	$(F77) $(FFLAGS) -o $(EXEC)/$*.exe $*.o \
+#	$(JLIB) $(MATHLIB) $(FITSLIB) $(XLIB) $(LIBC) -lm
+#	rm $*.o
+
+all: 
+	cd pscplib; make -f Makefile_pscplib; cd ..
+
+merge_calib_resid.exe : merge_calib_resid.c $(DEP_CATALOG) 
+
+clean :
+	rm -f *.o 

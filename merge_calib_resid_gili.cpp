@@ -7,15 +7,18 @@
 * Version 25/02/2020
 *************************************************************************/
 #include "jlp_catalog_utils.h"
+#include "jlp_string.h"
+#include "latex_utils.h"
 
+/*
 #define DEBUG
 #define DEBUG_1
-/*
 */
 
 int add_residuals_to_calib(FILE *fp_calib, char *resid_fname, FILE *fp_out,
                            int gili_format); 
-static int modify_LaTeX_header(char *in_line, FILE *fp_out);
+static int modify_LaTeX_header(char *in_line, FILE *fp_out, int gili_format);
+static int latex_truncate_columns(char *in_line, char *buffer, int ncolumns);
 
 int main(int argc, char *argv[])
 {
@@ -24,23 +27,23 @@ int gili_format;
 FILE *fp_calib, *fp_out;
 time_t t = time(NULL);
 
-
-if(argc != 4) {
-  printf("Syntax: merge_calib_resid_gili calibrated_table residual_table out_table\n");
+if(argc != 5) {
+  printf("Syntax: merge_calib_resid_gili calibrated_table residual_table out_table gili_format\n");
   return(-1);
 }
 strcpy(calib_fname, argv[1]);
 strcpy(resid_fname, argv[2]);
 strcpy(out_fname, argv[3]);
+sscanf(argv[4], "%d", &gili_format);
 
-printf("OK: calib=%s resid=%s output=%s \n", calib_fname, resid_fname, 
-           out_fname); 
+printf("OK: calib=%s resid=%s output=%s gili_format=%d\n", 
+       calib_fname, resid_fname, out_fname, gili_format); 
 
 /* Open input calibrated table: */
 if((fp_calib = fopen(calib_fname, "r")) == NULL) {
    fprintf(stderr, "merge_calib_resid/Fatal error opening calib. table %s\n",
            calib_fname);
-    return(-1);
+   return(-1);
   }
 
 /* Open output table: */
@@ -60,7 +63,6 @@ fprintf(fp_out, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
 
 /* Scan the input calibrated table and add the residuals 
 */
-gili_format = 1;
 add_residuals_to_calib(fp_calib, resid_fname, fp_out, gili_format); 
 
 /* Close opened files:
@@ -88,9 +90,16 @@ char previous_object_name[40], previous_comp_name[40];
 char sign_Drho[20], sign_Dtheta[20];
 double epoch_o, rho_o, rho_o_c[50], theta_o_c[50];
 int iline, norbits_found, status, verbose_if_error = 0, length1;
-int ref_slength = 60, nmax_orbits = 50;
+int ref_slength = 60, nmax_orbits = 50, orbit_grade;
+int irho, ncolumns;
 register int i;
 
+/* Read rho in column irho=5 if Gili's format: */
+      if(gili_format == 1) {
+        irho = 5;
+      } else {
+        irho = 6;
+      }
 previous_object_name[0] = '\0';
 previous_comp_name[0] = '\0';
 iline = 0;
@@ -99,14 +108,17 @@ while(!feof(fp_calib)) {
     iline++;
 // Read header (assume 10 columns) and add 3 columns for output header
 // In gili'format: ADS col. is replaced by Dm col., but no filter, no orbit... 
-    if(!strncmp(in_line,"& & & & & & & & & \\\\", 20)){
+    if((gili_format == 1) && !strncmp(in_line,"& & & & & & & & & \\\\", 20)){
+      fprintf(fp_out,   "& & & & & & & & & & & & \\\\ \n");
+// In calern format: 10 => 13 cols, ADS and orb col. are removed  
+    } else if((gili_format != 1) && !strncmp(in_line,"& & & & & & & & & \\\\", 20)){
       fprintf(fp_out,   "& & & & & & & & & & & & \\\\ \n");
 // Good lines start with a digit (WDS names...) or with \idem
 // Lines starting with % are ignored
     } else if(in_line[0] != '%' && (isdigit(in_line[0]) 
         || !strncmp(in_line, "\\idem", 5))) {
 // Remove the end of line '\n' from input line:
-      cleanup_string(in_line, 256);
+      jlp_cleanup_string(in_line, 256);
 
 // New version (after 2011): now search for orbit in all cases 
 // since the orbit flag may be wrong
@@ -131,9 +143,9 @@ while(!feof(fp_calib)) {
          exit(-1);
          }
 
-/* Read rho in column 5: */
+/* Read rho in column irho=5 if Gili's format: */
       rho_o = 0.; 
-      status = latex_get_column_item(in_line, buffer, 5, verbose_if_error);
+      status = latex_get_column_item(in_line, buffer, irho, verbose_if_error);
       if(status || (sscanf(buffer,"%lf", &rho_o) != 1)) {
          fprintf(stderr,"Warning: error reading rho_o: %s (line=%d) Unres ?\n", 
                  in_line, iline);
@@ -142,7 +154,8 @@ while(!feof(fp_calib)) {
 /* Retrieve the residuals for this object and epoch in the residual table: */
       strcpy(quadrant_discrep,"");
       get_values_from_RESID_table(resid_fname, object_name, comp_name, epoch_o,
-                                  rho_o, orbit_ref, ref_slength, rho_o_c, 
+                                  rho_o, orbit_ref, &orbit_grade,
+                                  ref_slength, rho_o_c, 
                                   theta_o_c, quadrant_discrep, &norbits_found, 
                                   nmax_orbits);
       if(!norbits_found) {
@@ -165,24 +178,29 @@ while(!feof(fp_calib)) {
              } else {
              strcpy(sign_Dtheta,"");
              }
-// Remove \\ from in_line and copy to buffer:
-           strcpy(buffer, in_line);
-           length1 = strlen(buffer);
+// Truncate the line if too many columns:
+        if(gili_format == 1)
+           ncolumns = 10;
+        else
+           ncolumns = 9;
+        status = latex_truncate_columns(in_line, buffer, ncolumns);
+
+/*
            printf("EEZZ/ >%s<\n i=%d iline=%d length=%d -1=%c -2=%c\n", 
              in_line, i, buffer, length1, buffer[length1-1], buffer[length1-2]);
-           buffer[length1-2] = '\0';
-           fprintf(fp_out, "%s & %s & %s%.2f & %s%.1f%s \\\\\n", 
+*/
+           fprintf(fp_out, "%s & %s & %s%.2f & %s%.1f%s & %d \\\\\n", 
                    buffer, &orbit_ref[i*ref_slength], sign_Drho, rho_o_c[i], 
-                   sign_Dtheta, theta_o_c[i], quadrant_discrep);
+                   sign_Dtheta, theta_o_c[i], quadrant_discrep, orbit_grade);
            } // EOF for i loop
       } /* EOF for (i=0, norbits_found) */
     } else if (in_line[0] == '%') {
 /* Simply copy the input line to the output file if it is a comment: */
 /* Remove the end of line '\n' from input line: */
-      cleanup_string(in_line, 256);
+      jlp_cleanup_string(in_line, 256);
       fprintf(fp_out, "%s\n", in_line);
     } else {
-      modify_LaTeX_header(in_line, fp_out);
+      modify_LaTeX_header(in_line, fp_out, gili_format);
     }/* EOF if !isdigit ... */
   } /* EOF if fgets */ 
 /* Load object name to handle the case of "idem" (i.e. multiple measurements
@@ -199,34 +217,73 @@ return(0);
 * to add 3 columns with the residuals (orbit reference, rho_O-C, theta_O-C)
 *
 *********************************************************************/
-static int modify_LaTeX_header(char *in_line, FILE *fp_out)
+static int modify_LaTeX_header(char *in_line, FILE *fp_out, int gili_format)
 {
 char buffer[80];
 
 /* Copy input line to "compacted" form in order to perform the tests safely */
 strncpy(buffer, in_line,80);
 buffer[79]='\0';
-compact_string(buffer, 80);
+// Error if compact buffer !!!
+//jlp_compact_string(buffer, 80);
 
 /* begin{tabular*} */
  if(!strncmp(buffer, "\\begin{tabular*}", 16)) {
     fprintf(fp_out, "\\small \n");
-    fprintf(fp_out, "\\begin{tabular*}{\\textwidth}{clrcccccllllrr} \n");
+    fprintf(fp_out, "\\begin{tabular*}{\\textwidth}{cllccccrrllrrc} \n");
 /* Extended header */
  } else if(!strncmp(buffer, "WDS", 3)) {
+if(gili_format == 1) {
     fprintf(fp_out,"WDS & Name & Epoch & Bin. & $\\rho$ \
 & $\\sigma_\\rho$ & \\multicolumn{1}{c}{$\\theta$} & $\\sigma_\\theta$ \
 & Dm & Notes & Orbit & {\\scriptsize $\\Delta \\rho$(O-C)} \
-& {\\scriptsize $\\Delta \\theta$(O-C)} \\\\ \n");
+& {\\scriptsize $\\Delta \\theta$(O-C)} & Grade \\\\ \n");
+} else {
+    fprintf(fp_out,"WDS & Name & Epoch & Filt. & Eyep. & $\\rho$ \
+& $\\sigma_\\rho$ & \\multicolumn{1}{c}{$\\theta$} & $\\sigma_\\theta$ \
+& Notes & Orbit & {\\scriptsize $\\Delta \\rho$(O-C)} \
+& {\\scriptsize $\\Delta \\theta$(O-C)} & Grade \\\\ \n");
+}
 /* JLPPPP/DDEBUG: To be tested */
- } else if(!strncmp(buffer, "& &     &     & (\")", 20)){
+ } else if(!strncmp(buffer, "& &     &     & (", 17)){
     fprintf(fp_out,"& & & & (\\arcsec) & (\\arcsec) &  \\multicolumn{1}{c}{($^\\circ$)} \
 & ($^\\circ$) & & & (\\arcsec) & ($^\\circ$) \\\\ \n");
  } else {
 /* For the other lines, simply copy the input line to the output file: */
 /* Remove the end of line '\n' from input line: */
-  cleanup_string(in_line, 256);
+  jlp_cleanup_string(in_line, 256);
   fprintf(fp_out, "%s\n", in_line);
  }
+return(0);
+}
+/************************************************************************
+*
+*
+*************************************************************************/
+static int latex_truncate_columns(char *in_line, char *buffer, int ncolumns)
+{
+int i;
+char *pc;
+
+// printf("DEBUG: input \n >%s< \n", in_line);
+strcpy(buffer, in_line);
+pc = buffer;
+for(i = 0; i < ncolumns; i++) {
+//  printf("DEBUG: column=%d \n", i);
+  while(*pc && (*pc != '&') && (*pc != '\\')) pc++;
+// Problem with \rlap...
+  if(*pc == '\\') {
+    if(*(pc+1) == '\\') {
+     *pc = '\0'; 
+      break;
+     }
+    }
+  if(*pc) 
+    pc++;
+  else
+    break;
+  }
+*pc = '\0';
+// printf("DEBUG: output \n >%s< \n", buffer);
 return(0);
 }

@@ -9,7 +9,9 @@
 * Version 16/02/2020
 *************************************************************************/
 #include "jlp_catalog_utils.h"
+#include "OC6_catalog_utils.h" // line_extraction_from_OC6_catalog_gili()
 #include "residuals_utils.h"
+#include "jlp_string.h"
 
 #define DEBUG
 /*
@@ -155,7 +157,7 @@ while(!feof(fp_calib)) {
     if(in_line[0] != '%' && (isdigit(in_line[0]) 
         || !strncmp(in_line, "\\idem", 5))) {
 /* Remove the end of line '\n' from input line: */
-      cleanup_string(in_line, 256);
+      jlp_cleanup_string(in_line, 256);
 
 /* If orbital binary : */
      if(search_for_all) {
@@ -164,7 +166,7 @@ while(!feof(fp_calib)) {
       if(isdigit(in_line[0])) {
          read_object_name_from_CALIB_line_gili(in_line, wds_name, discov_name, 
                                                comp_name);
-         compact_string(comp_name,40);
+         jlp_compact_string(comp_name,40);
          (*n_required_orbits)++;
 #ifdef DEBUG
          printf("Orbit needed for disc=>%s< comp=>%s<\n", 

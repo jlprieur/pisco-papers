@@ -27,7 +27,7 @@
 */
 
 /* Maximum number of measurements per object: */
-#define NMEAS 256 
+#define NMEAS 64
 /* Maximum number of objects: */
 #define NOBJ_MAX 8000
 
@@ -40,6 +40,7 @@ char date[12];          /* Date, e.g., 29/12/2004 */
 double epoch;            /* Julian day as a fraction of year, e;g., 2004.23 */
 char filter[10];        /* Filter name: V, R, Sf */
 int eyepiece;           /* Focal length of the magnifying eyepiece */
+int is_new_double;      /* flag set to one if nd or ND in comments */
 int quadrant;           /* Quadrant value */
 int dquadrant;          /* Quadrant uncertainty (0 or 1) */
 double rho;              /* Angular separation of the binary (arcseconds) */
@@ -56,13 +57,14 @@ int flagged_out;        /* Flag to cancel output (for publication) */
 /* Structure to define an object */
 typedef struct {
 char wds[40];		/* WDS name */
-char name[40];		/* Official binary name */
+char discov_name[40];	/* Discoverer's binary name */
+char comp_name[40];	/* Companion name */
 char ads[40];		/* ADS name */
-MEASURE measure[NMEAS];	/* Measurements concerning this object */
+MEASURE meas[NMEAS];	/* Measurements concerning this object */
+MEASURE cmp_meas[NMEAS]; /* Measurements in compared file concerning this object */
 char notes[80];		/* Notes which are common to all measurements */
 double ra; 		/* Right ascension */
 int dec; 		/* Declination */
-int orbit;              /* Flag, set to one if orbit */
 int nmeas;              /* Nber of measurements for this object*/
 double WR;               /* Radius value of last measurement in WDS_CHARA data base */
 double WT;               /* Theta value of last measurement in WDS_CHARA data base */
@@ -73,11 +75,14 @@ double WY;               /* Year of last measurement in WDS_CHARA data base */
 extern "C" {
 #endif
 
-int astrom_read_object_data_for_wds_or_ads(char *b_data, char *wds_name, 
-                            char *discov_name, char *ads_name, int *orbit, 
-                            double *WR, double *WT, double *WY, int i_notes);
-int astrom_read_object_data_for_name_only(char *b_data, char *star_name, 
-                            int *epoch_year);
+int astrom_read_new_object_line_for_wds_or_ads(char *b_data, char *wds_name, 
+                            char *discov_name, char *comp_name,
+                            char *ads_name, 
+                            double *WR, double *WT, double *WY, int i_notes,
+                            int gili_format);
+int astrom_read_object_data_for_name_only(char *b_data, char *discov_name, 
+                            char *comp_name, double *epoch_year,
+                            int gili_format);
 int astrom_check_measure(char *b_data, int i_eyepiece, int i_rho, 
                          int i_drho, int i_theta, int i_dtheta);
 int astrom_calibrate_measures(OBJECT *obj, int nobj,  double *calib_scale1,
@@ -92,16 +97,22 @@ int astrom_add_new_measure(char *b_data, OBJECT *obj, int i_obj,
                            int i_filename, int i_date, int i_filter, 
                            int i_eyepiece, int i_rho, int i_drho, int i_theta, 
                            int i_dtheta, int i_notes, int comments_wanted);
+int astrom_read_new_measure(char *b_data, int i_filename, int i_date, 
+                            int i_filter, int i_eyepiece, int i_rho, int i_drho,                            int i_theta, int i_dtheta, int i_notes, 
+                            char *filename2, char *notes2, double *epoch2, 
+                            char *filter2, int *eyepiece2, double *rho2, 
+                            double *err_rho2, double *theta2, 
+                            double *err_theta2);
 int astrom_decode_data(char *b_data, char *date, double *epoch, double *rho, 
                        double *drho, double *theta, double *dtheta, 
                        int *eyepiece, int i_date, int i_eyepiece, int i_rho, 
                        int i_drho, int i_theta, int i_dtheta);
 int latex_read_ivalue(char *b_data, int *value, int icol);
-int latex_read_fvalue(char *b_data, double *value, int icol, int verbose); 
+int latex_read_dvalue(char *b_data, double *value, int icol, int verbose); 
 int latex_read_svalue(char *b_data, char *value, int icol); 
 int astrom_compute_epoch_value(char *b_data, char *date, double *epoch,
                                int icol);
-int latex_write_fvalue(char *b_data, char *b_out, double value, int icol, 
+int latex_write_dvalue(char *b_data, char *b_out, double value, int icol, 
                        int nber_of_decimals);
 int astrom_ra_sort_objects(OBJECT *obj, int *index_obj, int nobj);
 int astrom_name_sort_objects(OBJECT *obj, int *index_obj, int nobj);
@@ -123,6 +134,8 @@ int astrom_check_if_object_name(char *b_in, int *contains_object_name,
                                 int *contains_WDS_name);
 int astrom_is_record_file(char *filename);
 int astrom_is_direct_file(char *filename);
+int jlp_split_discov_comp(char *full_name, int fname_length,
+                          char *discov_name, char *comp_name);
 
 #ifdef __cplusplus
 }

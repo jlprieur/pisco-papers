@@ -94,6 +94,11 @@ int isafe;
 */
    daa = daa - Period * (double)((int)(daa / Period));
    mean_anomaly = mean_motion * daa;
+/* Kepler's equation:
+ mean_anomaly = ee - e_eccent * sin(ee)
+ where ee is the eccentric anomaly, 
+       e_ccent is the eccentricity
+*/
 /* Initialize ee: */
    ee = mean_anomaly + e_eccent*sin(mean_anomaly)
              / sqrt(1.0 + e_eccent * (e_eccent - 2.0 * cos(mean_anomaly)));
@@ -135,7 +140,6 @@ int isafe;
 /* Put the result into the interval [0,360] */
  if(*theta_c < 0.0) *theta_c += 360.0;
  if(*theta_c > 360.0) *theta_c -= 360.0;
-
 
 /* Computed separation angle: */
    *rho_c = a_smaxis * (1.0 - e_eccent * cos(ee)) * cos(pp) / cos(theta);
