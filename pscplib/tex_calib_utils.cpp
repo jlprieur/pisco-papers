@@ -11,6 +11,7 @@
 #include "jlp_fitsio.h"  // get_bessel_epoch_from_fits_file()
 #include "jlp_numeric.h" // JLP_QSORT, MINI, MAXI, PI, etc
 #include "jlp_string.h"    // jlp_trim_string, jlp_compact_string 
+#include "latex_utils.h"
 
 #include "tex_calib_utils.h" // prototypes defined here
 /*
@@ -409,6 +410,7 @@ if(i < 4) {
 
 // Oct2020: jj is no longer used for the same object (idem removed !)
   if(jj >= 0) {
+// Conversion for LaTeX:
      astrom_preformat_wds_name(obj[io].wds, wds_name);
 /*** Format for first line of an object */
 /* October 2008: 3 decimals for the epoch */
@@ -489,12 +491,12 @@ fprintf(fp_out,"\\def\\idem{''} \n");
 
 nlines = -1;
 
+
 for(i = 0; i < nobj; i++) {
   io = index_obj[i];
   nm = (obj[io]).nmeas;
 /* New table header in publi_mode */
   if(nlines > nl_max) {
-//    fprintf(fp_out,"& & & & & & & & & & & \\\\ \n");
     fprintf(fp_out,"& & & & & & & & & \\\\ \n");
     fprintf(fp_out,"\\hline \n");
     fprintf(fp_out,"\\end{tabular*} \n");
@@ -513,16 +515,11 @@ for(i = 0; i < nobj; i++) {
 //    fprintf(fp_out,"\\begin{tabular*}{\\textwidth}{clrcccccrccl} \n");
     fprintf(fp_out,"\\begin{tabular*}{\\textwidth}{clccccrccl} \n");
     fprintf(fp_out,"\\hline \n");
-//    fprintf(fp_out,"& & & & & & & & & & & \\\\ \n");
     fprintf(fp_out,"& & & & & & & & & \\\\ \n");
-//    fprintf(fp_out,"WDS & Name & ADS & Epoch & Fil. & Eyep. & $\\rho$ & $\\sigma_\\rho$ & \\multicolumn{1}{c}{$\\theta$} & $\\sigma_\\theta$ & Orb. & Notes \\\\ \n");
     fprintf(fp_out,"WDS & Name & Epoch & Bin. & $\\rho$ & $\\sigma_\\rho$ & \\multicolumn{1}{c}{$\\theta$} & $\\sigma_\\theta$ & Dm & Notes \\\\ \n");
-//    fprintf(fp_out,"& &       &       &      &     & (mm)& (\") & (\") & ($^\\circ$) & ($^\\circ$) & \\\\ \n");
     fprintf(fp_out,"& &     &     & (\") & (\") & ($^\\circ$) & ($^\\circ$) & & \\\\ \n");
-//    fprintf(fp_out,"& & & & & & & & & & & \\\\ \n");
     fprintf(fp_out,"& & & & & & & & & \\\\ \n");
     fprintf(fp_out,"\\hline \n");
-//    fprintf(fp_out,"& & & & & & & & & & & \\\\ \n");
     fprintf(fp_out,"& & & & & & & & & \\\\ \n");
     nlines = 0;
   }
@@ -531,9 +528,14 @@ for(i = 0; i < nobj; i++) {
 /************* Loop on measurements: **********************/
   for(j = 0; j < nm; j++) {
     me = &(obj[io]).meas[j];
+// Conversion for LaTeX:
+     astrom_preformat_wds_name(obj[io].wds, wds_name);
 /* BOF case not_flagged */
     if(!me->flagged_out) {
       if(me->rho <= 0.1) {
+// If too small, invalidate it:
+         me->rho = NO_DATA;
+         printf("ZZZZ:Unresolved case 1 ! write fp_out \n");
 // Unresolved case:
          fprintf(fp_out,"%s & %s%s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata &  & Unres. \\\\\n", 
              wds_name, obj[io].discov_name, obj[io].comp_name, 
@@ -542,8 +544,6 @@ for(i = 0; i < nobj; i++) {
 /* For DEBUG:
 if(i < 4) {
   printf("i= %d io=%d nm=%d j=%d flag=%d\n", i, io, nm, j, me->flagged_out);
-//  printf(" WDS=%s rho=%.2f drho=%.2f theta=%.2f dtheta=%.2f eyepiece=%d\n", 
-//           obj[io].wds, me->rho, me->drho, me->theta, me->dtheta, me->eyepiece);
   printf(" WDS=%s rho=%.2f drho=%.2f theta=%.2f dtheta=%.2f\n", 
            obj[io].wds, me->rho, me->drho, me->theta, me->dtheta, me->eyepiece);
   }
@@ -609,30 +609,24 @@ if(i < 4) {
    else strcpy(dmag_string, "");
 
   if(jj >= 0) {
+// Conversion for LateX
      astrom_preformat_wds_name(obj[io].wds, wds_name);
 /*** Format for first line of an object */
 /* October 2008: 3 decimals for the epoch */
   if(me->rho != NO_DATA) 
-/*    fprintf(fp_out,"%s & %s & %s & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f & & %s %s %s\\\\\n", 
-         wds_name, obj[io].discov_name, obj[io].comp_name,
-         obj[io].ads, me->epoch, me->filter, 
-         me->eyepiece, me->rho, me->drho, me->theta, qflag, me->dtheta, 
-         me->notes, q_notes, nd_notes);
-*/
+/******* WWWWWWWWWWWWW
+WWWWWWWWWWWWWWWW **************/
     fprintf(fp_out,"%s & %s%s & %.3f & %d & %.3f & %.3f & %.1f%s & %.1f & %s & %s\\\\\n", 
          wds_name, obj[io].discov_name, obj[io].comp_name,
          me->epoch, me->eyepiece, me->rho, me->drho, 
          me->theta, qflag, me->dtheta, dmag_string, nd_notes); //, me->notes, q_notes);
-  else
-/*
-    fprintf(fp_out,"%s & %s%s & %s & %.3f & %s & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata & & \\\\\n", 
-         wds_name, obj[io].discov_name, obj[io].comp_name, 
-         obj[io].ads, me->epoch, me->filter, 
-         me->eyepiece); //, me->notes);
-*/
-    fprintf(fp_out,"%s & %s%s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata & \\nodata &  \\\\\n", 
-         wds_name, obj[io].discov_name, obj[io].comp_name, 
-         me->epoch, me->eyepiece); //, me->notes);
+  else {
+// Doesn't seem to occur:
+         printf("ZZZZ:Unresolved case 2 ! write fp_out \n");
+         fprintf(fp_out,"%s & %s%s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata &  & Unres. \\\\\n", 
+             wds_name, obj[io].discov_name, obj[io].comp_name, 
+             me->epoch, me->eyepiece); //  me->notes);
+     }
   } /* EOF j >= 0 */
 /*** Format for subsequent lines of an object */
 /***
@@ -653,11 +647,9 @@ if(i < 4) {
  } /* EOF loop on j */
 } /* EOF loop on i */
 
-// fprintf(fp_out,"& & & & & & & & & & & \\\\ \n");
  fprintf(fp_out,"& & & & & & & & & \\\\ \n");
  fprintf(fp_out,"\\hline \n");
  fprintf(fp_out,"\\end{tabular*} \n \n");
-// fprintf(fp_out,"Note: In column 9, the exponent $^*$ indicates that the position angle\n");
  fprintf(fp_out,"Note: In column 7, the exponent $^*$ indicates that the position angle\n");
  fprintf(fp_out,"$\\theta$ could be determined without the 180$^\\circ$ ambiguity.\n");
 \

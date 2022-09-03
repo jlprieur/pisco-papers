@@ -148,37 +148,41 @@ verbose_if_error = 0;
      }
 
 // Compute parallax from plx1_value and plx2_value:
-   if(plx1_value > 0.) {
+   if(plx1_value > 0.001) {
      *plx0 = plx1_value;
      }
-   if(plx2_value > 0.) {
+   if(plx2_value > 0.001) {
      *plx0 = plx2_value;
      }
-   if((plx1_value > 0.) && (plx2_value > 0.)) {
+   if((plx1_value > 0.001) && (plx2_value > 0.001)) {
      *plx0 = (plx1_value + plx2_value)/2.;
      }
-   if(err_plx1_value > 0.) {
+   if(err_plx1_value > 0.001) {
      *err_plx0 = err_plx1_value;
      }
-   if(err_plx2_value > 0.) {
+   if(err_plx2_value > 0.001) {
      *err_plx0 = err_plx2_value;
      }
-   if((err_plx1_value > 0.) && (err_plx2_value > 0.)) {
+   if((err_plx1_value > 0.001) && (err_plx2_value > 0.001)) {
      *err_plx0 = 1. / (1. / err_plx1_value + 1. / err_plx2_value);
      }
-   if((plx1_value > 0.) && (err_plx1_value > 0.) && (plx2_value > 0.)
-     && (err_plx2_value > 0.)) {
+   if((plx1_value > 0.001) && (err_plx1_value > 0.001) && (plx2_value > 0.001)
+     && (err_plx2_value > 0.001)) {
      *plx0 = (plx1_value / err_plx1_value + plx2_value / err_plx2_value) 
               / (1. / err_plx1_value + 1. / err_plx2_value);
      }
 #ifdef DEBUG
-   printf("OK: in_line=%s plx1_value=%f plx2_value=%f \n", 
-          in_line, plx1_value, plx2_value);
-   printf("OK: in_line=%s absp0=%f plx0=%f err_plx0=%f \n", 
-          in_line, *absp0, *plx0, *err_plx0);
+   printf("OK: in_line=%s \n", in_line);
 #endif
+   printf("OK: plx1_value=%f plx2_value=%f ", 
+          plx1_value, plx2_value);
+   printf("absp0=%f plx0=%f err_plx0=%f \n", 
+          *absp0, *plx0, *err_plx0);
 
-return(0);
+status = 0;
+if(*plx0 < 0.001) status = -1;
+
+return(status);
 } 
 /************************************************************************
 * Scan the input table and make the modifications
@@ -199,7 +203,7 @@ char plx_string[64], err_plx_string[64];
 char *pc, absmag_string[64];
 double absp0, plx0, err_plx0;
 char target_str[128];
-double Vmag, Vabsmag, M_odot;
+double Vmag, Vabsmag, M_odot, ww;
 int iline, status, verbose_if_error = 0, absmag_strlen;
 int i, in_line_length, nval, ncols_max;
 
@@ -231,31 +235,32 @@ while(!feof(fp_in)) {
                                 in_err_plx1_col, in_err_plx2_col, 
                                 &plx0, &err_plx0, &absp0);
 
+// If the apparent magnitude or the parallax could not be found, write nodata to those fields:
+   sprintf(absmag_string, "\\nodata");
+
 // Look for the parallax of the target:
    sprintf(plx_string, "\\nodata ");
    sprintf(err_plx_string, "\\nodata ");
-   if(status == 0) {
-     if(plx0 > 0.0) {
-       sprintf(plx_string, "%.3f ", plx0);
-       sprintf(err_plx_string, "%.3f ", err_plx0);
-       }
-    }
+   Vmag = 0.;
 // Read the apparent magnitude from the good column
    status = latex_get_column_item(in_line, buffer, in_mag_col, 
                                   verbose_if_error);
-   nval = sscanf(buffer, "%lf\n", &Vmag);
+   nval = sscanf(buffer, "%lf\n", &ww);
    if(nval == 1) {
+      Vmag = ww;
+      }
+   if((plx0 > 0.01) && (Vmag > 0.01)) {
+      sprintf(plx_string, "%.3f ", plx0);
+      sprintf(err_plx_string, "%.3f ", err_plx0);
 // Compute absolute magnitude Vabsmag, 
 // with Vmag value and the parallax and absportion at that index:
-    status = compute_abs_mag(Vmag, absp0, plx0, &Vabsmag);
-    sprintf(absmag_string, "%.3f ", Vabsmag);
-    } else {
-// If the apparent magnitude could not be found, write nodata to those fields:
-    sprintf(absmag_string, "\\nodata");
-    }
-   strcpy(out_line, in_line);
-   latex_add_emptycols_to_ncols(in_line, out_line, MAX_LENGTH,
-                                ncols_max);
+      status = compute_abs_mag(Vmag, absp0, plx0, &Vabsmag);
+      sprintf(absmag_string, "%.2f ", Vabsmag);
+      }
+printf("QQQQQQQQQQQ: plx0=%f Vmag=%f absmag_string=%s\n", plx0, Vmag, absmag_string);
+// Copy in_line to out_line:
+//   strcpy(out_line, in_line);
+   latex_add_emptycols_to_ncols(in_line, out_line, MAX_LENGTH, ncols_max);
 
 // Copy absmag to output file in out_absmag_col, i.e., the good column:
     absmag_strlen = strlen(absmag_string);

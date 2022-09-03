@@ -64,7 +64,7 @@ else
   {
   strcpy(filein,argv[1]);
   strcpy(fileout,argv[2]);
-  nval = sscanf(argv[4], "%d,%d,%d,%d", &in_spect_col, &in_spect_part,
+  nval = sscanf(argv[3], "%d,%d,%d,%d", &in_spect_col, &in_spect_part,
                 &in_absmag_col, &out_mass_col);
   if(nval != 4) {
     fprintf(stderr, "Error, should have 4 column numbers !\n");
@@ -227,19 +227,21 @@ while(!feof(fp_in)) {
 // Read the absolute magnitude from in_absmag_col column
    status = latex_get_column_item(in_line, buffer, in_absmag_col, 
                                   verbose_if_error);
-   nval = sscanf(buffer, "%lf\n", &Vabsmag);
-   if(nval == 1) {
+   if(status == 0) {
+     nval = sscanf(buffer, "%lf\n", &Vabsmag);
+     if(nval == 1) {
 // Compute the mass of the star from its absolute magnitude
 // compute_mass_from_mag(double MVmag, char *spect_type, double *mass);
-    compute_mass_from_mag(Vabsmag, spect_string, &M_odot);
-    sprintf(mass_string, "%.3f ", M_odot);
-    } else {
+       compute_mass_from_mag(Vabsmag, spect_string, &M_odot);
+       sprintf(mass_string, "%.2f ", M_odot);
+       } else {
 // If the absolute magnitude could not be found, write nodata to the mass field:
-    sprintf(mass_string, "\\nodata");
-    }
+       sprintf(mass_string, "\\nodata");
+       }
+     }
+// Copy in_line to out_line:
    strcpy(out_line, in_line);
-   latex_add_emptycols_to_ncols(in_line, out_line, MAX_LENGTH,
-                                ncols_max);
+   latex_add_emptycols_to_ncols(in_line, out_line, MAX_LENGTH, ncols_max);
 // Copy mass to output file in out_mass_col, i.e., the good column:
     mass_strlen = strlen(mass_string);
     status = latex_set_column_item(out_line, in_line_length, mass_string,
@@ -302,19 +304,40 @@ return(status);
 * K5 : -0.66
 * M0 : -1.21
 * 
+* /home/text/tex/papers/scard07b_Orb/scard07b_Orb.pdf
 * As proposed in Scardia et al.~(2008) have used the mass-luminosity relation:
-* Mass = -k (M_bol - M_0)
+* log_{10} Mass = -k (M_bol - M_0)
 * with k = 0.1045 and M_0 = 4.60
 * and where Mass is in solar mass unit
 **********************************************************************/
-static int compute_mass_from_mag(double MVmag, char *spect_type, double *mass)
+static int compute_mass_from_mag(double MVmag, char *spect_type0, double *mass)
 {
 double BolomCorr, MBolom;
-int status = -1;
+char sptype0, spect_type[64];
+int ic, nval, sptype1, status = -1;
 
-BolomCorr = -0.66;
+strcpy(spect_type, spect_type0);
+jlp_compact_string(spect_type, 40);
+printf("AAAA: spect_type:%s\n", spect_type);
+ sptype0 = spect_type[0];
+ ic = int(spect_type[1]) - int('0');
+ sptype1 = 0;
+ if(ic >=0 && ic <= 9) sptype1 = ic;
+printf("AAAA: sptype0:%c sptype1=%d\n", sptype0, sptype1);
+if(sptype0 == 'G') {
+  BolomCorr = -0.10 - sptype1 * 0.04/5.;
+  } else if (sptype0 == 'K') {
+  BolomCorr = -0.24 - sptype1 * 0.42/5.;
+  } else if (sptype0 == 'M') {
+  BolomCorr = -1.21 - sptype1 * 0.42/5.;
+  } else {
+  BolomCorr = -0.66;
+  }
+
 MBolom = MVmag - BolomCorr;
-*mass = -0.1045 * (MBolom - 4.60);
+*mass = pow(10., -0.1045 * (MBolom - 4.60));
+
+printf("AAAA: Vmag=%f BC=%f Bo=%f mass=%f\n", MVmag, BolomCorr, MBolom, *mass);
 return(status);
 }
 /**********************************************************************
@@ -330,6 +353,18 @@ static int decode_composite_spectral_type(char *buffer, int in_spect_part,
                                           char *spect_string)
 {
 int status = -1;
+char *pc;
 
+// printf("buffer=%s\n", buffer);
+strcpy(spect_string, buffer);
+pc = spect_string;
+while(*pc && *pc != '+') pc++;
+if(in_spect_part == 1) {
+    *pc = '\0';
+  } else if(*pc == '+') {
+  pc++;
+  strcpy(spect_string, pc);
+  }
+// printf("in_spect_part=%d spect_string=%s\n", in_spect_part, spect_string);
 return(status);
 }

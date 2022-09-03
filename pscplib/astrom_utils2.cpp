@@ -11,6 +11,7 @@
 #include "jlp_fitsio.h"  // get_bessel_epoch_from_fits_file()
 #include "jlp_numeric.h" // JLP_QSORT, MINI, MAXI, PI, etc
 #include "jlp_string.h"    // jlp_trim_string, jlp_compact_string 
+#include "latex_utils.h"  // latex_read_svalue...
 
 #include "astrom_utils2.h" // prototypes defined here
 /*

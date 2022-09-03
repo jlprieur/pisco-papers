@@ -45,6 +45,7 @@ LQ=3        (Quadrant with long integration)
 #include "jlp_numeric.h" // JLP_QSORT, MINI, MAXI, PI, etc
 #include "jlp_fitsio.h" // JLP_besselian_epoch 
 #include "jlp_string.h"
+#include "latex_utils.h"  // latex_read_svalue...
 
 /*
 #define DEBUG
@@ -80,13 +81,8 @@ int astrom_decode_data(char *b_data, char *date, double *epoch, double *rho,
                        double *drho, double *theta, double *dtheta, 
                        int *eyepiece, int i_date, int i_eyepiece, int i_rho, 
                        int i_drho, int i_theta, int i_dtheta);
-int latex_read_ivalue(char *b_data, int *value, int icol);
-int latex_read_dvalue(char *b_data, double *value, int icol, int iverbose); 
-int latex_read_svalue(char *b_data, char *value, int icol); 
 int astrom_compute_epoch_value(char *b_data, char *date, double *epoch,
                                int icol);
-int latex_write_dvalue(char *b_data, char *b_out, double value, int icol, 
-                       int nber_of_decimals);
 int astrom_read_WDS_CHARA(char *notes, double *WR, double *WT, double * WY);
 int astrom_read_quadrant_Q(char *notes, int *quadrant, int *dquadrant,
                            int comments_wanted);
@@ -865,57 +861,6 @@ if(!status) printf(" rho=%.2f drho=%.2f theta=%.2f dtheta=%.2f eyepiece=%d\n",
 return(status);
 }
 /**************************************************************************
-* Read integer value in column #icol from b_data string
-*
-**************************************************************************/
-int latex_read_ivalue(char *b_data, int *value, int icol) 
-{
-int ival, status;
-char buff[60];
-
-*value = 0.;
-status = latex_read_svalue(b_data, buff, icol); 
-if(!status) { 
-   ival = sscanf(buff, "%d", value);
-/*
-printf("latex_read_ivalue/buff=>%s< value=%d ival=%d\n", buff, *value, ival);
-*/
-   if(ival <= 0) status = 1;
-  }
-
-return(status);
-}
-/**************************************************************************
-* Read double value in column #icol from b_data string
-*
-* INPUT:
-* iverbose : (i = 1 verbose if error)
-*           (i > 1 verbose if error and even if no error)
-**************************************************************************/
-int latex_read_dvalue(char *b_data, double *value, int icol, int iverbose) 
-{
-int ival, status;
-char buff[60], nodata[60];
-
-*value = 0.;
-status = latex_read_svalue(b_data, buff, icol); 
-if(!status) { 
-   sscanf(buff, "%s", nodata);
-   if(!strncmp(nodata,"\\nodata",7)) { 
-     if(iverbose >= 1) printf("latex_read_dvalue: nodata found! \n");
-     *value = NO_DATA;
-     }
-   else {
-   ival = sscanf(buff, "%lf", value);
-   if(ival <= 0) { 
-      if(iverbose > 1) printf("latex_read_dvalue/buff=>%s< value=%.2f ival=%d\n", buff, *value, ival);
-      status = 1;
-      }
-   }
-  }
-return(status);
-}
-/**************************************************************************
 * Read epoch value from date information in column #icol from b_data string
 *
 * Input format: dd/mm/yy, e.g. 12/2/2004 or 01/12/1998 or 31/06/2002
@@ -958,132 +903,6 @@ printf("astrom_compute_epoch_value/ epoch=%f\n", *epoch);
 }
 
 return(status);
-}
-/**************************************************************************
-* Read string value in column #icol from b_data string
-*
-**************************************************************************/
-int latex_read_svalue(char *b_data, char *value, int icol) 
-{
-int ic, status, column_is_found;
-char buff[NMAX], data[NMAX], *pc;
-
-*value = '\0';
-
-strcpy(data, b_data);
-
-pc = data;
-data[NMAX-1] = '\0';
-column_is_found = 0;
-ic = 1;
-buff[0] = '\0';
-while(*pc && strncmp(pc,"\\\\",2)) {
-  if(ic == icol) {
-    column_is_found = 1; 
-    strcpy(buff,pc);
-    break;
-    }
-  if(*pc == '&') { 
-    ic++;
-    }
-  pc++;
-  }
-*pc = '\0';
-/* Return if column not found, or empty */
-if(!buff[0]) return(-1); 
-
-/* Otherwise go on analysis: */
-status = 1;
-buff[NMAX-1] = '\0';
-pc = buff;
-while(*pc) {
-  if(*pc == '&' || !strncmp(pc,"\\\\",2)) {
-    *pc = '\0'; 
-    strcpy(value,buff);
-    if(*value) status = 0;
-    break;
-    }
-  pc++;
-  }
-
-/* Removes '\r' (Carriage Return) if present: */
-if(status == 0) {
-pc = value;
-while(*pc) {
-  if(*pc == '\r') *pc = ' ';
-  pc++;
-  }
-}
-
-return(status);
-}
-/**************************************************************************
-* Write a double value in column #icol to b_out string
-*
-* INPUT:
-* b_data: current value of the line
-* value: value to be written in b_data
-* nber_of_decimal: number of decimals for the output format
-*
-* OUTPUT:
-* b_out: updated value of the line b_data with the input value in Col.#icol
-*
-**************************************************************************/
-int latex_write_dvalue(char *b_data, char *b_out, double value, int icol, 
-                       int nber_of_decimals) 
-{
-int ic, column_is_found, istart, iend;
-char data[360], *pc;
-register int i;
-
-strcpy(data, b_data);
-
-pc = data;
-column_is_found = 0;
-ic = 1;
-i = 0;
-while(*pc) {
-  if(ic == icol && !column_is_found) {
-    column_is_found = 1; 
-    istart = i;
-    }
-  else if(ic == icol+1) {
-    iend = i-1;
-    break;
-    }
-  if(*pc == '&') { 
-    ic++;
-    }
-  pc++;
-  i++;
-  }
-/* Return if column not found, or empty */
-if(istart == 0 || iend == istart) return(-1); 
-
-strcpy(b_out, b_data);
-
-switch(nber_of_decimals) {
-  case 1:
-    sprintf(&b_out[istart],"%8.1f ",value);
-    break;
-  case 2:
-    sprintf(&b_out[istart],"%8.2f ",value);
-    break;
-  case 3:
-  default:
-    sprintf(&b_out[istart],"%8.3f ",value);
-    break;
-  case 4:
-    sprintf(&b_out[istart],"%9.4f ",value);
-    break;
-  }
-strcpy(&b_out[istart+9],&b_data[iend]);
-
-/*
-printf("update_value/from >%s< to >%s< (value=%.2f)\n", b_data, b_out, value);
-*/
-
-return(0);
 }
 /***************************************************************************
 * astrom_name_sort_objects

@@ -19,6 +19,222 @@
 #define DEBUG 
 #define DEBUG_1 
 */
+/**************************************************************************
+* Read integer value in column #icol from b_data string
+*
+**************************************************************************/
+int latex_read_ivalue(char *b_data, int *value, int icol)
+{
+int ival, status;
+char buff[64];
+
+*value = 0.;
+status = latex_read_svalue(b_data, buff, icol);
+if((status == 0) || (status == 3)) {
+// Handle "\nnodata" value:
+   if(status == 3) {
+     *value = NO_DATA;
+     status == 3;
+     } else {
+     ival = sscanf(buff, "%d", value);
+/*
+printf("latex_read_ivalue/buff=>%s< value=%d ival=%d\n", buff, *value, ival);
+*/
+     if(ival <= 0) status = 1;
+     }
+  }
+
+return(status);
+}
+/**************************************************************************
+* Read float value in column #icol from b_data string
+*
+* INPUT:
+* iverbose : (i = 1 verbose if error)
+*           (i > 1 verbose if error and even if no error)
+**************************************************************************/
+int latex_read_fvalue(char *b_data, float *value, int icol, int iverbose)
+{
+int ival, status;
+char buff[64];
+
+*value = 0.;
+status = latex_read_svalue(b_data, buff, icol);
+if((status == 0) || (status == 3)) {
+// Handle "\nnodata" value:
+   if(status == 3) {
+     *value = NO_DATA;
+     status == 3;
+     } else {
+     ival = sscanf(buff, "%f", value);
+     if(ival <= 0) {
+       if(iverbose > 1) printf("latex_read_fvalue/buff=>%s< value=%.2f ival=%d\n", buff, *value, ival);
+       status = 1;
+       }
+     }
+   }
+return(status);
+}
+/**************************************************************************
+* Read double value in column #icol from b_data string
+*
+* INPUT:
+* iverbose : (i = 1 verbose if error)
+*           (i > 1 verbose if error and even if no error)
+**************************************************************************/
+int latex_read_dvalue(char *b_data, double *value, int icol, int iverbose)
+{
+int ival, status;
+char buff[64];
+
+*value = 0.;
+status = latex_read_svalue(b_data, buff, icol);
+if((status == 0) || (status == 3)) {
+// Handle "\nnodata" value:
+   if(status == 3) {
+     *value = NO_DATA;
+     status == 3;
+     } else {
+     ival = sscanf(buff, "%lf", value);
+     if(ival <= 0) {
+        if(iverbose > 1) printf("latex_read_dvalue/buff=>%s< value=%.2f ival=%d\n", buff, *value, ival);
+      status = 1;
+      }
+    }
+  }
+return(status);
+}
+/**************************************************************************
+* Read string value in column #icol from b_data string
+*
+**************************************************************************/
+int latex_read_svalue(char *b_data, char *value, int icol)
+{
+int ic, status, column_is_found;
+char buff[NMAX], data[NMAX], *pc, nnodata_str[64];
+
+strcpy(nnodata_str, "nodata");
+
+*value = '\0';
+
+strcpy(data, b_data);
+
+pc = data;
+data[NMAX-1] = '\0';
+column_is_found = 0;
+ic = 1;
+buff[0] = '\0';
+while(*pc && strncmp(pc,"\\\\",2)) {
+  if(ic == icol) {
+    column_is_found = 1;
+    strcpy(buff,pc);
+    break;
+    }
+  if(*pc == '&') {
+    ic++;
+    }
+  pc++;
+  }
+*pc = '\0';
+/* Return if column not found, or empty */
+if(!buff[0]) return(-1);
+
+/* Otherwise go on analysis: */
+status = 1;
+buff[NMAX-1] = '\0';
+pc = buff;
+while(*pc) {
+  if(*pc == '&' || !strncmp(pc,"\\\\",2)) {
+    *pc = '\0';
+    strcpy(value,buff);
+    if(*value) status = 0;
+    break;
+    }
+  pc++;
+  }
+
+/* Removes '\r' (Carriage Return) if present: */
+if(status == 0) {
+pc = value;
+while(*pc) {
+  if(*pc == '\r') *pc = ' ';
+  pc++;
+  }
+}
+
+// Look for "\nnodata" string:
+if(strstr(value, nnodata_str) != NULL) status = 3;
+
+return(status);
+}
+/**************************************************************************
+* Write a double value in column #icol to b_out string
+*
+* INPUT:
+* b_data: current value of the line
+* value: value to be written in b_data
+* nber_of_decimal: number of decimals for the output format
+*
+* OUTPUT:
+* b_out: updated value of the line b_data with the input value in Col.#icol
+*
+**************************************************************************/
+int latex_write_dvalue(char *b_data, char *b_out, double value, int icol,
+                       int nber_of_decimals)
+{
+int ic, column_is_found, istart, iend;
+char data[360], *pc;
+register int i;
+
+strcpy(data, b_data);
+
+pc = data;
+column_is_found = 0;
+ic = 1;
+i = 0;
+while(*pc) {
+  if(ic == icol && !column_is_found) {
+    column_is_found = 1;
+    istart = i;
+    }
+  else if(ic == icol+1) {
+    iend = i-1;
+    break;
+    }
+  if(*pc == '&') {
+    ic++;
+    }
+  pc++;
+  i++;
+  }
+/* Return if column not found, or empty */
+if(istart == 0 || iend == istart) return(-1);
+
+strcpy(b_out, b_data);
+
+switch(nber_of_decimals) {
+  case 1:
+    sprintf(&b_out[istart],"%8.1f ",value);
+    break;
+  case 2:
+    sprintf(&b_out[istart],"%8.2f ",value);
+    break;
+  case 3:
+  default:
+    sprintf(&b_out[istart],"%8.3f ",value);
+    break;
+  case 4:
+    sprintf(&b_out[istart],"%9.4f ",value);
+    break;
+  }
+strcpy(&b_out[istart+9],&b_data[iend]);
+
+/*
+printf("update_value/from >%s< to >%s< (value=%.2f)\n", b_data, b_out, value);
+*/
+
+return(0);
+}
 /************************************************************
 * Get character string in the icol th column of a LaTeX table
 *
@@ -85,7 +301,7 @@ int latex_set_column_item(char *in_line, int in_line_length,
 int ic, i1, i2, istart, i;
 char *pc, buffer[512], out_line[512];;
 
-printf("WWWW: icol=%d new_item_len=%d\n", icol, new_item_len);
+// printf("set_column_item/icol=%d new_item_len=%d\n", icol, new_item_len);
 
  strcpy(out_line, in_line);
  pc = in_line;
@@ -145,7 +361,6 @@ printf("DEBUG/out_line=%s\n", out_line);
 // Copy for returning the argument:
  strncpy(in_line, out_line, in_line_length);
 
-printf("WWWW: ok, return\n");
 return(0);
 }
 /***********************************************************************
@@ -267,6 +482,10 @@ return(status);
 }
 /*************************************************************************
 * Add empty columns to obtain ncols_max 
+* INPUT:
+*  in_string
+* OUTPUT:
+*  out_string
 *************************************************************************/
 int latex_add_emptycols_to_ncols(char *in_string, char *out_string,
                                  int len_string_max, int ncols_max)
@@ -274,19 +493,22 @@ int latex_add_emptycols_to_ncols(char *in_string, char *out_string,
 char *pc;
 int ii, ncols;
 
+// Copy in_string to out_string:
 strcpy(out_string, in_string);
 pc = out_string;
-ncols = 0;
+ncols = 1;
 ii = 0;
 
 // Scan the line and count the columns:
-while( (*pc != '\0') && ((*pc != '\\') && (*(pc+1) != '\\')) ) {
+// skip \nodata with second condition..
+while( (*pc != '\0') && ((*pc != '\\') || (*(pc+1) != '\\')) ) {
   if(*pc == '&') ncols++;
   pc++; ii++;
   }
 
 // Add empty columns:
 while(ncols < ncols_max) {
+  *pc = ' '; pc++; ii++;
   *pc = '&'; pc++; ii++;
   *pc = ' '; pc++; ii++;
   ncols++;
@@ -304,7 +526,8 @@ if(ii > len_string_max) {
    exit(-1);
    }
 
-printf(" QQQQ: >%s< \n", out_string);
+// printf(" UUU3: ncols=%d >%s< ii=%d Len_max=%d\n", ncols, out_string,
+//          ii, len_string_max);
 return(0);
 }
 

@@ -12,6 +12,7 @@
 #include "jlp_fitsio.h"  // get_epoch_from_fits_file()
 #include "jlp_numeric.h" // JLP_QSORT, MINI, MAXI, PI, etc
 #include "jlp_string.h"
+#include "latex_utils.h"  // latex_read_svalue...
 
 #include "astrom_utils_pdb.h"
 /*
