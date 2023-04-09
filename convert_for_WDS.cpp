@@ -1,15 +1,25 @@
 /*************************************************************************
-* Program latex_to_ascii
-* To convert a LaTeX table to an ASCII list 
+* Program convert_for_WDS 
+* To convert a calibrated table to be suited to direct includion in the WDS 
 *
+00004+2749  &  TDS1238  & 2013.963 & 1 & 0.834 & 0.007 & 266.2\rlap{$^*$} & 0.8 &  &\\
+00005+2031  &  COU444  & 2013.924 & 1 & 0.693 & 0.007 & 39.5  & 0.3 & 3.25 &\\
+00010+2721  &  DAM361Aa,Ab & 2013.927 & 1 & 1.442 & 0.007 & 358.3  & 0.3 & 2.26 & NDp\\
+*
+wds000.new:00004+2749       2013.963   q 86.2    0.8      0.834    0.007      .     .       .     .                0.8   1 Gii2022  S    7
+wds000.new:00005+2031       2013.924     39.5    0.3      0.693    0.007      .     .      3.25   .                0.8   1 Gii2022  S  X 7
+wds000.new:00010+2721 Aa,Ab 2013.927    358.3    0.3      1.442    0.007      .     .      2.26   .                0.8   1 Gii2022  S  X 7
 * JLP
 * Version 02/05/2009
 *************************************************************************/
 #include <stdio.h>
 #include <stdlib.h>   /* exit() */
+#include <ctype.h>   // isdigit() 
 #include <math.h>
 #include <string.h>
 #include "latex_utils.h" // jlp: latex_read_fvalue...
+#include "jlp_string.h"    // jlp_trim_string, jlp_compact_string
+#include "tex_calib_utils.h" //extract_companion_from 
 
 /* Maximum number of columns to be extracted: */
 #define IMAX 10 
@@ -18,6 +28,9 @@
 #define DEBUG
 */
 
+static int jlp_convert_table_for_WDS(char *filein,char *fileout);
+static int jlp_convert_line_for_WDS(char *in_line, char *out_line, 
+                                    int line_length);
 static int jlp_latex_to_ascii(FILE *fp_in, FILE *fp_out, int ix, int *iy,
                               int ncols, int icol_name);
 static int jlp_latex_table_to_ascii(FILE *fp_in, FILE *fp_out, int ix, int *iy,
@@ -28,8 +41,7 @@ int JLP_RDLATEX_TABLE(int ix, int iy, float *xx, float *yy, int *npts,
 int main(int argc, char *argv[])
 {
 char filein[60], fileout[60];
-int ix, iy[IMAX], icol_name, ncols, i;
-FILE *fp_in, *fp_out;
+int status;
 
   printf("latex_to_ascii/ JLP/ Version 20/12/2010\n");
   printf("Note that this program can handle multiple LaTeX tables\n\n");
@@ -38,52 +50,132 @@ if(argc == 7 && *argv[4]) argc = 5;
 if(argc == 7 && *argv[3]) argc = 4;
 if(argc == 7 && *argv[2]) argc = 3;
 if(argc == 7 && *argv[1]) argc = 2;
-if(argc != 4 && argc != 5)
+if(argc != 3)
   {
   printf("Error: argc=%d\n\n", argc);
-  printf("Syntax: latex_to_ascii in_latex_table out_ascii_file ix,iy1,iy2,...,iy10 [icol_name]\n");
-  printf("\n(Enter simply ix,iy1 for 2 columns and ix,iy1,iy2, for 3 columns)\n");
-  printf("\n(Enter 0,ix to generate following list: (index, ix column)\n");
+  printf("Syntax: convert_for_WDS calibrated_table out_ascii_file \n");
   exit(-1);
   }
 else
   {
   strcpy(filein,argv[1]);
   strcpy(fileout,argv[2]);
-  ix = 0;
-  for(i = 0; i < IMAX; i++) iy[i] = 0;
-  icol_name = 0;
-  ncols = sscanf(argv[3],"%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", &ix, &iy[0], &iy[1], &iy[2], &iy[3], &iy[4], &iy[5], &iy[6], &iy[7], &iy[8], &iy[9]);
-  ncols--;
-  if(argc == 5) sscanf(argv[4],"%d", &icol_name);
   }
 
-printf(" OK: filein=%s fileout=%s ncols=%d\n ix=%d iy1, iy2,...=%d %d %d %d %d %d %d %d %d %d icol_name=%d\n", 
-         filein, fileout, ncols, ix, iy[0], iy[1], iy[2], iy[3], iy[4], iy[5], iy[6], 
-         iy[7], iy[8], iy[9], icol_name);
+printf(" OK: filein=%s fileout=%s \n", 
+         filein, fileout);
+
+/* Scan the file and make the conversion: */
+status = jlp_convert_table_for_WDS(filein,fileout);
+
+return(status);
+}
+/***********************************************************************
+*
+*************************************************************************/
+static int jlp_convert_table_for_WDS(char *filein,char *fileout)
+{
+char in_line[512], out_line[512];
+int iline;
+FILE *fp_in, *fp_out;
 
 if((fp_in = fopen(filein,"r")) == NULL)
 {
 printf(" Fatal error opening input file %s \n",filein);
-exit(-1);
+return(-1);
 }
 
 if((fp_out = fopen(fileout,"w")) == NULL)
 {
 printf(" Fatal error opening output file %s \n",fileout);
 fclose(fp_in);
-exit(-1);
+return(-1);
 }
-fprintf(fp_out,"%% From %s ix=%d iy1,2,...=", filein, ix);
-for(i = 0; i < ncols; i++) fprintf(fp_out," %d", iy[i]);
-fprintf(fp_out," icol_name=%d\n", icol_name);
-
-/* Scan the file and make the conversion: */
-//jlp_latex_table_to_ascii(fp_in,fp_out, ix, iy, ncols, icol_name);
-jlp_latex_to_ascii(fp_in,fp_out, ix, iy, ncols, icol_name);
+iline = 0;
+while(!feof(fp_in))
+{
+  if(fgets(in_line, 512, fp_in))
+  {
+  iline++;
+  if(isdigit(in_line[0]) != 0) {
+   jlp_convert_line_for_WDS(in_line, out_line, 512);
+   fprintf(fp_out,"%s\n", out_line);
+   }
+  }
+}
 
 fclose(fp_in);
 fclose(fp_out);
+return(0);
+}
+/***********************************************************************
+* Example:
+00004+2749  &  TDS1238  & 2013.963 & 1 & 0.834 & 0.007 & 266.2\rlap{$^*$} & 0.8 &  &\\
+00005+2031  &  COU444  & 2013.924 & 1 & 0.693 & 0.007 & 39.5  & 0.3 & 3.25 &\\
+00010+2721  &  DAM361Aa,Ab & 2013.927 & 1 & 1.442 & 0.007 & 358.3  & 0.3 & 2.26 & NDp\\
+*
+wds000.new:00004+2749       2013.963   q 86.2    0.8      0.834    0.007      .     .       .     .                0.8   1 Gii2022  S    7
+wds000.new:00005+2031       2013.924     39.5    0.3      0.693    0.007      .     .      3.25   .                0.8   1 Gii2022  S  X 7
+wds000.new:00010+2721 Aa,Ab 2013.927    358.3    0.3      1.442    0.007      .     .      2.26   .                0.8   1 Gii2022  S  X 7
+*************************************************************************/
+static int jlp_convert_line_for_WDS(char *in_line, char *out_line, 
+                                    int line_length)
+{
+int status = 0, verbose_if_error = 0, icol, object_len0, i;
+char wds_name0[64], object_name0[64], comp_name0[64], buffer[54], q_flag[1], *pc;
+double epoch0, rho0, drho0, theta0, dtheta0, dmag0;
+/*
+* icol=1: wds_name
+* icol=2: object_name including companion_name
+* icol=3: epoch 
+* icol=4: ibin 
+* icol=5: rho 
+* icol=6: drho 
+* icol=7: theta
+* icol=8: dtheta
+* icol=9: dmag
+*/
+  icol = 1;
+  status = latex_read_svalue(in_line, buffer, icol);
+// Remove $ if present (for negative values: $-$):
+  pc = buffer;
+  i = 0;
+  while(*pc) {
+    if(*pc != '$') wds_name0[i++] = *pc; 
+    pc++;
+    }
+  wds_name0[i] = '\0';
+  jlp_compact_string(wds_name0, 64);
+  icol = 2;
+  status = latex_read_svalue(in_line, buffer, icol);
+  extract_companion_from_name(buffer, object_name0, comp_name0, &object_len0);
+  icol = 3;
+  status = latex_read_dvalue(in_line, &epoch0, icol, verbose_if_error);
+  icol = 5;
+  status = latex_read_dvalue(in_line, &rho0, icol, verbose_if_error);
+  status = latex_read_svalue(in_line, buffer, icol);
+  if(strstr(buffer,"rlap") != NULL) 
+    q_flag[0] = 'q';
+  else
+    q_flag[0] = ' ';
+  icol = 6;
+  status = latex_read_dvalue(in_line, &drho0, icol, verbose_if_error);
+  icol = 7;
+  status = latex_read_dvalue(in_line, &theta0, icol, verbose_if_error);
+  icol = 8;
+  status = latex_read_dvalue(in_line, &dtheta0, icol, verbose_if_error);
+  icol = 9;
+  status = latex_read_dvalue(in_line, &dmag0, icol, verbose_if_error);
+  if(status != 0) dmag0 = 0.;
+  if(dmag0 > 0.) {
+    sprintf(out_line, "wds000.new:%s %5.5s %8.3f  %c%6.1f    %2.1f     %6.3f    %5.3f      .     .      %4.2f   .                0.8   1 Gii2022  S  X 7",
+            wds_name0, comp_name0, epoch0, q_flag[0], theta0, dtheta0, rho0, 
+            drho0, dmag0); 
+    } else {
+    sprintf(out_line, "wds000.new:%s %5.5s %8.3f  %c%6.1f    %2.1f     %6.3f    %5.3f      .     .       .     .                0.8   1 Gii2022  S    7",
+            wds_name0, comp_name0, epoch0, q_flag[0], theta0, dtheta0, rho0, 
+            drho0); 
+    }
 return(0);
 }
 /*************************************************************************
@@ -229,8 +321,6 @@ while(!feof(fp_in))
 /* Maximum length for a line will be NMAX/2 = 512 characters: */
   if(fgets(in_line, NMAX/2, fp_in))
   {
-  if(in_line[0] != '%') {
-printf("ZZZ: %s\n", in_line);
   iline++;
   in_line[NMAX/2] = '\0';
   strcpy(b_data, in_line);
@@ -267,7 +357,6 @@ printf(" iline=%d Data line: >%s<\n", iline, b_data);
            fprintf(fp_out,"\n"); 
          } /* EOF !status */
    } /* EOF successful reading of buffer from the input file */
-  } // if not %
 } /* EOF while !feof(fp_in) */
 return(0);
 }

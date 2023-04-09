@@ -9,7 +9,9 @@
 #define __WDS_catalog_utils   
 
 int search_discov_name_in_WDS_catalog(char *WDS_catalog, char *discov_name,
-                                      char *WDS_name, int *found);
+                                      char *comp_name,
+                                      char *WDS_name, char *WDS_discov_name,
+                                      char *WDS_comp_name, int *found);
 int get_data_from_WDS_catalog(char *WDS_catalog, char *discov_name,
                               char *comp_name,
                               char *wds_name, double *WdsLastYear,
@@ -29,5 +31,6 @@ int get_data_from_WDS_and_HIP_catalogs(char *WDS_catalog,
                                        double *magV_A, double *magV_B,
                                        char *spectral_type, int *found_in_WDS,
                                        int *found_in_Hip_cat);
+int decode_WDS_name(char *WDS_name, double *WDS_alpha, double *WDS_delta);
 
 #endif   /* EOF sentry */

@@ -29,8 +29,8 @@ int get_ads_from_ads_wds_crossref(char *ADS_WDS_cross, char *discov_name1,
                                   char *ads_name1);
 */
 
-/*
 #define DEBUG
+/*
 */
 
 /*************************************************************************
@@ -50,8 +50,9 @@ int astrom_add_WDS_from_discov(FILE *fp_in, FILE *fp_out, char *WDS_catalog)
 double magV, B_V, paral, err_paral, magV_A, magV_B; 
 double year, WdsLastYear, WdsLastTheta, WdsLastRho, mag_A, mag_B;
 int iline, status, gili_format;
-int found;
-char b_in[256], discov_name[64], wds_name[64], *pc;
+int found, found1;
+char b_in[256], discov_name[64], *pc;
+char wds_name[64], wds_discov_name[64], wds_comp_name[64];
 char comp_name[64], spectral_type[64]; 
 
 year = 0.;
@@ -73,12 +74,17 @@ while(!feof(fp_in))
   pc++;
   }
  
+  if((b_in [0] != '\\') && (b_in[0] != '%')) {
 /* Check if input LateX line contains the name of the object:
 */
   gili_format = 0;
   status = astrom_read_object_data_for_name_only(b_in, discov_name, 
                                                  comp_name, &year,
                                                  gili_format);
+#ifdef DEBUG
+ printf("from astrom_read_object_data_for_name_only with %s status=%d\n", 
+          b_in, status);
+#endif
 /* Remove the extra-blanks: */
   jlp_trim_string(discov_name, 64);
   jlp_trim_string(comp_name, 64);
@@ -113,21 +119,34 @@ if(comp_name[0] != '\0') printf("DEBUG1234/comp_name=%s\n ", comp_name);
 printf("(discov_name=%s< wds_name=>%s< stat=%d)\n", 
        discov_name, wds_name, status);
 #endif
-         if(found) {
+         if(found != 0) {
            sprintf(b_in, "%s = %s%s & %d & & & & & & & WY=%d WT=%d WR=%3.1f \\\\\n",
                    wds_name, discov_name, comp_name, 
                    (int)year, (int)WdsLastYear, 
                    (int)WdsLastTheta, WdsLastRho);
         } else {
-          fprintf(stderr, "astrom_add_WDS_from_discov/Error: observations not found for: wds=%s disc=%s comp=%s\n",  
+            search_discov_name_in_WDS_catalog(WDS_catalog, discov_name,
+                                              comp_name,
+                                              wds_name, wds_discov_name,
+                                              wds_comp_name, &found1);
+
+          if(found1 != 0) {
+          fprintf(stderr, "astrom_add_WDS_from_discov/Error: observations not found for: wds=%s discov=%s comp=%s\n",  
                    wds_name, discov_name, comp_name);
-           sprintf(b_in, "%s = %s%s & & & & & & & \\\\\n",
-                   wds_name, discov_name, comp_name);
+           sprintf(b_in, "%s = %s%s & %d & & & & & & \\\\\n",
+                   wds_name, discov_name, comp_name, (int)year);
+           } else {
+          fprintf(stderr, "astrom_add_WDS_from_discov/Error: wds_name not found for discov=%s\n",  
+                   discov_name);
+           sprintf(b_in, "%s%s & %d & & & & & & \\\\\n",
+                   discov_name, comp_name, (int)year);
+           }
         } 
     } /* EOF status == 0 (new object name) */
 
 // Copy current line to file:
         fputs(b_in, fp_out);
+   } /* EOF if "&" */
   } /* EOF if fgets() */
 } /* EOF while loop */
 

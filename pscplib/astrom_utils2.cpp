@@ -14,8 +14,8 @@
 #include "latex_utils.h"  // latex_read_svalue...
 
 #include "astrom_utils2.h" // prototypes defined here
-/*
 #define DEBUG
+/*
 */
 
 /*************************************************************************

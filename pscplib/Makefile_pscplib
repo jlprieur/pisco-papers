@@ -16,16 +16,18 @@ JLIB=$(mylib)/newplot0.a $(mylib)/jlp_wxplot.a $(mylib)/jlp_splot.a \
 
 CATALOG_OBJ=jlp_catalog_utils.o PISCO_catalog_utils.o \
 	WDS_catalog_utils.o OC6_catalog_utils.o HIP_catalog_utils.o \
-	latex_utils.o residuals_utils.o
+	latex_utils.o residuals_utils.o jlp_calib_table.o
 CATALOG_SRC=$(CATALOG_OBJ:.o=.cpp)
 DEP_CATALOG=jlp_catalog_utils.h jlp_catalog_utils.cpp \
 	PISCO_catalog_utils.cpp PISCO_catalog_utils.h  WDS_catalog_utils.h \
 	OC6_catalog_utils.cpp OC6_catalog_utils.h \
-	HIP_catalog_utils.h latex_utils.o residuals_utils.h 
+	HIP_catalog_utils.h latex_utils.o residuals_utils.h jlp_calib_table.h 
 
-ASTROM_OBJ=astrom_utils1.o astrom_utils_pdb.o astrom_utils2.o tex_calib_utils.o 
+ASTROM_OBJ=astrom_utils1.o astrom_utils_pdb.o astrom_utils2.o \
+	tex_calib_utils.o csv_utils.o 
 ASTROM_SRC=$(ASTROM_OBJ:.o=.cpp)
-DEP_ASTROM_=astrom_utils1.h astrom_utils2.h tex_calib_utils.h $(DEP_ASTROM_SRC) 
+DEP_ASTROM_=astrom_utils1.h astrom_utils2.h tex_calib_utils.h \
+	csv_utils.h $(DEP_ASTROM_SRC) 
 
 MYPLOT_OBJ=orbit_plot_utils.o orbit_plot_xy.o
 MYPLOT_SRC=$(MYPLOT_OBJ:.o=.c)

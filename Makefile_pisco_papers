@@ -23,14 +23,15 @@ CATALOG_OBJ=$(PSCPLIB)/jlp_catalog_utils.o $(PSCPLIB)/PISCO_catalog_utils.o \
 	$(PSCPLIB)/astrom_utils2.o $(PSCPLIB)/astrom_utils_pdb.o \
 	$(PSCPLIB)/OC6_catalog_utils.o $(PSCPLIB)/HIP_catalog_utils.o \
 	$(PSCPLIB)/latex_utils.o $(PSCPLIB)/residuals_utils.o \
-	$(PSCPLIB)/tex_calib_utils.o
+	$(PSCPLIB)/jlp_calib_table.o  \
+	$(PSCPLIB)/tex_calib_utils.o $(PSCPLIB)/csv_utils.o 
 DEP_CATALOG=$(PSCPLIB)/jlp_catalog_utils.h $(PSCPLIB)/jlp_catalog_utils.c \
 	$(PSCPLIB)/PISCO_catalog_utils.c $(PSCPLIB)/PISCO_catalog_utils.h  \
 	$(PSCPLIB)/WDS_catalog_utils.h $(PSCPLIB)/astrom_utils1.h \
 	$(PSCPLIB)/OC6_catalog_utils.c $(PSCPLIB)/OC6_catalog_utils.h \
 	$(PSCPLIB)/HIP_catalog_utils.h \
 	$(PSCPLIB)/latex_utils.h $(PSCPLIB)/residuals_utils.h \
-	$(PSCPLIB)/tex_calib_utils.h 
+	$(PSCPLIB)/tex_calib_utils.h $(PSCPLIB)/csv_utils.h 
 
 MYPLOT_OBJ=$(PSCPLIB)/orbit_plot_utils.o $(PSCPLIB)/orbit_plot_xy.o
 MYPLOT_SRC=$(MYPLOT_OBJ:.o=.c)

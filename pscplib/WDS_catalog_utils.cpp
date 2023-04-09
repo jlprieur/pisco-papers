@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>                /* exit() */
 #include <string.h>
-#include <ctype.h>                 /* isprint... */
+#include <ctype.h>                 /* isprint, isdigit ... */
 #include <math.h>
 #include <time.h>                  /* date */
 #include "jlp_catalog_utils.h"     // Routines used to read catalogs:
@@ -25,8 +25,8 @@
 
 
 /*
-#define DEBUG
 #define DEBUG_1
+#define DEBUG
 */
 
 /* Defined here:
@@ -79,15 +79,20 @@ int read_coordinates_from_WDS_catalog(char *wds_name, char *WDS_catalog,
 *  found: 1 is object was found, 0 otherwise
 *************************************************************************/
 int search_discov_name_in_WDS_catalog(char *WDS_catalog, char *discov_name,
-                                      char *wds_name, int *found)
+                                      char *comp_name,
+                                      char *wds_name, char *wds_discov_name,
+                                      char *wds_comp_name, int *found)
 {
 FILE *fp_WDS_cat;
 char cat_line0[256], discov_name0[20], comp_name0[20], wds_name0[20];
-int iline;
+int iline, same_comp;
+
+*found = 0;
 
 /* Removes all the blanks since 7 characters for WDS, and 8 characters 
 * for Marco's file */
 jlp_compact_string(discov_name, 20);
+jlp_compact_string(comp_name, 20);
 
 /* Open input file containing the WDS catalog */
 if((fp_WDS_cat = fopen(WDS_catalog, "r")) == NULL) {
@@ -99,7 +104,7 @@ if((fp_WDS_cat = fopen(WDS_catalog, "r")) == NULL) {
 /* Look for the data concerning this object: */
 *found = 0;
 iline = 0;
-while(!feof(fp_WDS_cat)) {
+while(!feof(fp_WDS_cat) && (*found != 1)) {
  if(fgets(cat_line0, 256, fp_WDS_cat)) {
    iline++;
    if(cat_line0[0] != '%') {
@@ -119,13 +124,20 @@ while(!feof(fp_WDS_cat)) {
 /* Removes all the blanks since 7 characters for WDS, and 8 characters 
 * for Marco's file */
    jlp_compact_string(discov_name0, 20);
-   if(!strcmp(discov_name, discov_name0)) {
+   jlp_compact_string(comp_name0, 20);
+   same_comp = 0; 
+   if(!strcmp(comp_name, comp_name0)) same_comp = 1; 
+   if((comp_name[0] == '\0') && !strcmp(comp_name0, "AB")) same_comp = 1; 
+   if((comp_name0[0] == '\0') && !strcmp(comp_name, "AB")) same_comp = 1; 
+   if(!strcmp(discov_name, discov_name0) && (same_comp == 1)) {
      strcpy(wds_name, wds_name0);
+     strcpy(wds_discov_name, discov_name0);
+     strcpy(wds_comp_name, comp_name0);
      *found = 1;
 #ifdef DEBUG_1
-     printf("search_discov_name_in_WDS_catalog/Object found in WDS catalog (discov_name =%s) found=%d\n", 
-             discov_name, *found);
-     printf(" WDS=%s discov=%s comp=%s\n", wds_name0, discov_name0, comp_name0);
+     printf("search_discov_name_in_WDS_catalog/Object found (discov_name=%s< comp_name=%s<) found=%d", 
+             discov_name, comp_name,  *found);
+     printf(" WDS=%s discov0=%s< comp0=%s<\n", wds_name0, discov_name0, comp_name0);
 #endif
      break;
      }
@@ -538,3 +550,63 @@ printf("get_data_from_WDS_and_HIP_catalogs/discov_name=%s comp_name=%s wds_name=
 
 return(status);
 }
+/*************************************************************************
+*
+* Example: 
+01022+2705
+19022$-$2705
+**************************************************************************/
+int decode_WDS_name(char *WDS_name, double *WDS_alpha, double *WDS_delta)
+{
+char *pc, wds_alpha[32], wds_delta[32];
+int status, isign, ia1, ia2, id1, id2, nval;
+*WDS_alpha = 0.;
+*WDS_delta = 0.;
+
+// First part:
+strcpy(wds_alpha, WDS_name);
+pc = wds_alpha;
+while(*pc && isdigit(*pc) ) pc++;
+strcpy(wds_delta, pc);
+*pc = '\0';
+nval = sscanf(wds_alpha, "%02d%03d", &ia1, &ia2);
+ if(nval == 2) *WDS_alpha = (double)ia1 + (double)ia2 /1000.;
+
+// Second part:
+// + or $-$
+pc = wds_delta;
+if(*pc == '+') { 
+    isign = +1;
+    pc++;
+  } else {
+    if(*pc == '$') {
+      pc++;
+      if(*pc == '-') {
+        pc++;
+        isign = -1;
+        }
+        pc++;
+     } else if(*pc == '-') {
+        pc++;
+        isign = -1;
+     } else {
+       printf("Decode_WDS_name/Fatal error decoding >%s< \n", WDS_name);
+       exit(-1);
+     }
+  }
+
+// Last part:
+strcpy(wds_delta, pc);
+  while(*pc) pc++;
+  *pc = '\0';
+nval = sscanf(wds_delta, "%02d%02d", &id1, &id2);
+ if(nval == 2) *WDS_delta = isign *((double)id1 + (double)id2 /100.);
+
+printf("wds_name: >%s< = >%s< + >%s< sign=%d\n", 
+       WDS_name, wds_alpha, wds_delta, isign);
+
+printf("WDS_alpha=%f WDS_delta=%f\n", *WDS_alpha, *WDS_delta); 
+
+return(status);
+}
+

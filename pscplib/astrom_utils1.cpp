@@ -136,7 +136,8 @@ while(*pc) {
  if(*pc == '&') ncol++;
  pc++;
  }
-// DEBUG printf("in_astrom_fmt=%d ncol=%d\n", in_astrom_fmt, ncol);
+// DEBUG 
+printf("AAA in_astrom_fmt=%d ncol=%d\n", in_astrom_fmt, ncol);
 /*
 * in_astrom_fmt : =1 if gili's format (empty ADS column, no orb info)
 *                 =2 if gili's format (no ADS column, no orb info)
@@ -161,7 +162,9 @@ while(*pc) {
   return(-1); 
   }
  } else {
-  if(ncol == 9) { 
+// JLP2022: I add the possibility of 8 columns
+//  if((b_data[0] != '&') && ((ncol == 9) || (ncol == 8))) { 
+  if((b_data[0] != '&') && (b_data[0] != '\\') && (b_data[0] != '%')) { 
      new_object_line = 1; 
    } else {
 #ifdef DEBUG
@@ -241,6 +244,8 @@ return(ADS_status);
  22388+4419 = HO 295 AB & ADS 16138 & 2004. & & & & & & & orb \\
 or:
 & A1053f200S & 2011 & & & & & & & \\
+or:
+HO209AB & 2015 & & & & & & & \\
 *
 * INPUT:
 *  b_data
@@ -262,6 +267,7 @@ discov_name[0] = '\0';
 comp_name[0] = '\0';
 *epoch_year = 0.;
 
+if(b_data[0] == '&') {
 /* Read discov_name in 2nd column: */
 icol = 2;
 istat = latex_read_svalue(b_data, buff, icol); 
@@ -274,13 +280,32 @@ if((istat == 0) && (buff[0] != '\0')){
   icol = 3;
   istat = latex_read_ivalue(b_data, &ival, icol); 
   if(istat == 0){
-    if((ival > 2000) && (ival < 2050)) {
-      star_name_status = 0;
+    if((ival > 2000) && (ival < 2100)) {
       *epoch_year = (double)ival;
+      star_name_status = 0;
     }
   }
 }
-
+// EOF &
+} else {
+/* Read discov_name in 1st column: */
+icol = 1;
+istat = latex_read_svalue(b_data, buff, icol); 
+if((istat == 0) && (buff[0] != '\0')){
+ star_name_status = 0;
+ strcpy(full_name, buff);
+}
+/* Then try to read epoch_year in 2nd column: */
+  star_name_status = -1;
+  icol = 2;
+  istat = latex_read_ivalue(b_data, &ival, icol); 
+  if(istat == 0){
+    if((ival > 2000) && (ival < 2100)) {
+      *epoch_year = (double)ival;
+      star_name_status = 0;
+    }
+  }
+}
 // Split discov_name and comp_name:
 if(star_name_status == 0) {
  jlp_split_discov_comp(full_name, 64, discov_name, comp_name);
@@ -593,6 +618,7 @@ if(status == 0) eyepiece = (int)(ww+0.5);
 
 /* Read non-compulsory parameters */
    latex_read_svalue(b_data, filename, i_filename);
+   jlp_compact_string(filename, 60);
    latex_read_svalue(b_data, filter, i_filter);
 /* JLP2008: I change sf to W filter: */
 /* JLP 2008 I remove the first blank characters: */

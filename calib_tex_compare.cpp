@@ -200,6 +200,8 @@ while(!feof(fp_in2))
     orbit_status = latex_get_column_item(b_in, orbit__string, 11, verbose);
     err_theta3 = (obj3[0].meas[0]).dtheta;
     if((rho3 != NO_DATA) && (theta3 != NO_DATA)) {
+// Look for the measurements of the same object in the catalog obj1 
+// using WDSName3, ObjectName3 and epoch3:
       istat = tex_calib_get_meas_from_object(obj1, nobj1, WDSName3, ObjectName3,
                                              epoch3, WDSName1, ObjectName1, 
                                              &epoch1, filt1, &eyep1, &rho1, 

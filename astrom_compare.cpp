@@ -1,9 +1,21 @@
-/*************************************************************************
-* astrom_compare
+/************************************************************************
+* "astrom_compare.c"
+*
 * Program to compare the measurements of two astrom files
+* iopt=0: remove Dm from comments in file1 and output to out_file
+* iopt=1: transfer Q, Dm, and Simple from comments in file1 to file2 and output to out_file
+* iopt=2: output of items in file2 and not in file1 to out_file
+* iopt=3: output of discrepant meas. in file2 (compared to file1) to out_file
 *
 * Format of input files:
-& 120109\_ads684ab\_Rd\_8\_a & 12/01/2009 & R & 20 & 11.71 & 0.10 & -19.37 & 0.9 & Q=? EP=2009.0852 \\
+\hline % -------------------------------------------------------------
+& A563 & 2015 & & & & & & & \\
+%%
+%% Input file: a563_a.fits
+%% Back to original image
+%% Very high contrast filter
+%% rho=5.96 theta=-89.58 xc=63.96 yc=69.96 (64.0,69.8,7.0,3) Bary.
+& a563\_a & 10/04/2015 &  & 1 & 5.91 & 0.10 & 90.59 & 0.7 & EP=2015.2720 Q=2  \\
 *
 Possible keywords in the notes:
 EP=2004.1323 (epoch)
@@ -11,12 +23,613 @@ Q=2         (Quadrant with restricted triple-correlation)
 LQ=3        (Quadrant with long integration)
 *
 * JLP
-* Version 31/03/2020
+* Version 31/03/2022
 *************************************************************************/
+#include <ctype.h> // toupper()
+#include <string.h>
+#include <time.h>
 #include "astrom_utils1.h" 
 #include "astrom_utils2.h" 
 #include "jlp_string.h"  // jlp_compact_string
+// #include "jlp_catalog_utils.h"
+#include "jlp_string.h"  // (in jlplib/jlp_fits/ ) jlp_cleanup_..
 
+#ifndef MAXI
+#define MAXI(a,b) ((a) < (b)) ? (b) : (a)
+#endif
+#define DEBUG
+#define DEBUG_1
+/*
+*/
+
+static int astrom_removeDm(char *in_file1, char *out_file);
+static int astrom_compare2(char *in_file1, char *in_file2, char *out_file, 
+                           int iopt);
+static int astrom_read_all_measures(char *in_file1,
+                         OBJECT *obj, int *nobj, int i_filename, int i_date,
+                         int i_filter, int i_eyepiece, int i_rho,
+                         int i_drho, int i_theta, int i_dtheta, int i_notes);
+static int astrom_get_index_from_OBJECT(char* filename2, double epoch2, 
+                                        double rho2, OBJECT* obj1, int nobj1, 
+                                        int *i_obj1);
+static int astrom_add_comments(char* b_data, char* str_comments);
+static int astrom_check_if_discrepant(OBJECT *obj1, int i_obj1,
+                                      OBJECT *obj2, int i_obj2, 
+                                      int *is_discrepant);
+
+/********************************************************************
+*
+*********************************************************************/
+int main(int argc, char *argv[])
+{
+char in_file1[80], in_file2[80], out_file[80];
+int iopt;
+
+if(argc != 5) {
+  printf("Syntax: astrom_compare1 in_file1 in_file2 out_file iopt\n");
+  printf("iopt=0: remove Dm from comments in file1 and output to out_file\n");
+  printf("iopt=1: transfer Q, Dm, and Simple from comments in file1 to file2 and output to out_file\n");
+  printf("iopt=2: output of items in file2 and not in file1 to out_file\n");
+  printf("iopt=3: output of discrepant meas. in file2 (compared to file1) to out_file\n");
+  return(-1);
+}
+strcpy(in_file1, argv[1]);
+strcpy(in_file2, argv[2]);
+strcpy(out_file, argv[3]);
+sscanf(argv[4], "%d", &iopt);
+
+printf("OK: in_astrom1=%s in_astrom2=%s out_file=%s iopton=%d\n", 
+       in_file1, in_file2, out_file, iopt); 
+
+
+/*
+* iopt=0: remove Dm from comments in file1 and output to out_file
+* iopt=1: transfer Q, Dm, and Simple from comments in file1 to file2 and output to out_file
+* iopt=2: output of items in file2 and not in file1 to out_file
+* iopt=3: output of discrepant meas. in file2 (compared to file1) to out_file
+*/
+
+switch (iopt) {
+  case 0:
+    astrom_removeDm(in_file1, out_file);
+    break;
+  default:
+  case 1:
+  case 2:
+  case 3:
+    astrom_compare2(in_file1, in_file2, out_file, iopt);
+    break;
+  }
+
+return(0);
+}
+/************************************************************************
+* Scan the input file and remove Dm in the comments
+*
+* INPUT:
+* fp_file1: pointer to the input file 
+* fp_out: pointer to the output Latex file
+*
+*************************************************************************/
+static int astrom_removeDm(char *in_file1, char *out_file)
+{
+char in_line[256], in_line3[256]; 
+char buffer[256], str_Dm[64], str_dm[64], *pc_Dm, *pc_dm;
+int iline;
+FILE *fp_in1, *fp_out;
+time_t t0 = time(NULL);
+
+/* Open input file: */
+if((fp_in1 = fopen(in_file1, "r")) == NULL) {
+   fprintf(stderr, "astrom_compare/Fatal error opening input file %s\n",
+           in_file1);
+    return(-1);
+  }
+/* Open output file: */
+  if((fp_out = fopen(out_file, "w")) == NULL) {
+    fprintf(stderr, "astrom_compare/Fatal error opening output file: %s\n",
+           out_file);
+    return(-1);
+   }
+
+/* Header of the output file: */
+fprintf(fp_out, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
+fprintf(fp_out, "%% astrom_removeDm/output file from: %s \n%% Created on %s \n", 
+        in_file1, ctime(&t0));
+fprintf(fp_out, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
+
+strcpy(str_Dm, "Dm=");
+strcpy(str_dm, "dm=");
+iline = 0;
+while(!feof(fp_in1)) {
+  if(fgets(in_line, 256, fp_in1)) {
+    iline++;
+// Remove the end of line '\n' from input line:
+    jlp_cleanup_string(in_line, 256);
+
+    strcpy(in_line3, in_line);
+    if(in_line3[0] == '&') {
+      strcpy(buffer, in_line3);
+// Search for substring "str_dm" in in_line3 "in_line3":
+      pc_Dm = strstr(in_line3, str_Dm); 
+      pc_dm = strstr(in_line3, str_dm); 
+// Suppression of those items when found:
+/*
+      if(pc_Dm != NULL) { *pc_Dm = '\\'; pc_Dm++; *pc_Dm = '\\';
+          pc_Dm++; *pc_Dm = '\0'; }
+      else if(pc_dm != NULL) { *pc_dm = '\\'; pc_dm++; *pc_dm = '\\';
+          pc_dm++; *pc_dm = '\0'; }
+*/
+     }
+
+// Save to output file:
+    fprintf(fp_out, "%s\n", in_line3);
+
+   } /* EOF if fgets */ 
+} /* EOF while ... */
+printf("modif_resi_table1: %d lines successfully read and processed\n", 
+        iline);
+
+/* Close opened files:
+*/
+fclose(fp_in1);
+fclose(fp_out);
+
+return(0);
+}
+/************************************************************************
+* Scan the input file1 and compare it with file2 
+*
+* INPUT:
+* fp_file1: pointer to the input file 
+* fp_out: pointer to the output Latex file
+* iopt: option entered by the user
+*
+* iopt=1: transfer Q, Dm, and Simple from comments in file1 to file2 and output to out_file
+* iopt=2: output of items in file2 and not in file1 to out_file
+* iopt=3: output of discrepant meas. in file2 (compared to file1) to out_file
+*
+*************************************************************************/
+static int astrom_compare2(char *in_file1, char *in_file2, char *out_file,
+                           int iopt)
+{
+char b_in[NMAX], str_uscore[64], *pc_uscore, filename2[64], object_name[64];
+double epoch2, rho2, delta_m;
+char *pc, str_simple[64], str_comments[64];
+int i_filename, i_date, i_filter, i_eyepiece, i_rho, i_drho, i_theta, i_dtheta;
+int i_notes, nobj1, i, i_obj1, i_obj2, comments_wanted, status, status1;
+int is_discrepant, quadrt, dquadrt, is_simple;
+FILE *fp_in2, *fp_out;
+time_t t0 = time(NULL);
+OBJECT *obj1, *obj2;
+
+strcpy(str_simple, "Simple");
+
+if((obj1 = (OBJECT *)malloc(NOBJ_MAX * sizeof(OBJECT))) == NULL) {
+  printf("astrom_compare2/Fatal error allocating memory space for OBJECT: nobj_max=%d\n",
+          NOBJ_MAX);
+  exit(-1);
+  }
+
+// Initialize the number of measurements to zero
+for(i = 0; i < NOBJ_MAX; i++) (obj1[i]).nmeas = 0;
+
+if((obj2 = (OBJECT *)malloc(2 * sizeof(OBJECT))) == NULL) {
+  printf("astrom_compare2/Fatal error allocating memory space for OBJECT obj2\n");
+  exit(-1);
+  }
+// Initialize the number of measurements to zero
+for(i = 0; i < 2; i++) (obj2[i]).nmeas = 0;
+
+/* Open input file: */
+if((fp_in2 = fopen(in_file2, "r")) == NULL) {
+   fprintf(stderr, "astrom_compare2/Fatal error opening input file %s\n",
+           in_file2);
+    return(-1);
+  }
+/* Open output file: */
+  if((fp_out = fopen(out_file, "w")) == NULL) {
+    fprintf(stderr, "astrom_compare2/Fatal error opening output file: %s\n",
+           out_file);
+    return(-1);
+   }
+fprintf(fp_out,"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n");
+fprintf(fp_out,"%%%% astrom_compare : file1=%s, file2=%s\n", in_file1, in_file2);
+fprintf(fp_out,"%%%% Created on %s \n", ctime(&t0));
+fprintf(fp_out,"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n");
+
+/* date in column 3
+*  eyepiece in column 5
+*  rho in column 6
+*  drho in column 7
+*  theta in column 8
+*  dtheta in column 9
+*/
+  i_filename = 2;
+  i_date = 3;
+  i_filter = 4;
+  i_eyepiece = 5;
+  i_rho = 6;
+  i_drho = 7;
+  i_theta = 8;
+  i_dtheta = 9;
+  i_notes = 10;
+
+nobj1 = 0;
+astrom_read_all_measures(in_file1, obj1, &nobj1, 
+                         i_filename, i_date, i_filter, i_eyepiece,
+                         i_rho, i_drho, i_theta, i_dtheta, i_notes);
+
+// Underscore
+strcpy(str_uscore, "_");
+
+i_obj2 = 0;
+while(!feof(fp_in2))
+{
+/* Maximum length for a line will be 170 characters: */
+  if(fgets(b_in, 170, fp_in2))
+  {
+   b_in[169] = '\0';
+// Remove the end of line '\n' from input line:
+   jlp_cleanup_string(b_in, 170);
+// Search for substring "_" in b_in:
+   pc_uscore = strstr(b_in, str_uscore); 
+
+  if((pc_uscore != NULL) && (b_in[0] == '&')) {
+
+/* Try to read a new measure: */
+     comments_wanted = 1;
+     i_obj2 = 0;
+     (obj2[i_obj2]).nmeas = 0;
+     status = astrom_add_new_measure(b_in, obj2, i_obj2, i_filename, i_date,
+                                     i_filter, i_eyepiece, i_rho, i_drho, 
+                                     i_theta, i_dtheta, i_notes, 
+                                     comments_wanted);
+     if(status == 0) {
+     
+// theta is always in [0, 360.]:
+          if(obj2[i_obj2].meas[0].theta < 0.) 
+             obj2[i_obj2].meas[0].theta += 360.;
+          else if(obj2[i_obj2].meas[0].theta > 360.) 
+             obj2[i_obj2].meas[0].theta -= 360.;
+#ifdef DEBUG_1
+          printf("%s\n", b_in); 
+          printf("astrom_compare2/status=%d\n", status);
+          printf("astrom_compare2/obj2/nmeas=%d fname=%s eyep=%d rho=%.2f+/-%.2f theta=%.2f+/-%.2f epoch=%.4f dmag=%.2f quad=%d+/-%d notes=%s\n", 
+                 obj2[i_obj2].nmeas, 
+                 obj2[i_obj2].meas[0].filename, 
+                 obj2[i_obj2].meas[0].eyepiece, 
+                 obj2[i_obj2].meas[0].rho, 
+                 obj2[i_obj2].meas[0].drho, 
+                 obj2[i_obj2].meas[0].theta,
+                 obj2[i_obj2].meas[0].dtheta,
+                 obj2[i_obj2].meas[0].epoch,
+                 obj2[i_obj2].meas[0].dmag,
+                 obj2[i_obj2].meas[0].quadrant,
+// when dquadrant=0, quadrant is well defined 
+// when dquadrant=1, quadrant is not meaningfull
+                 obj2[i_obj2].meas[0].dquadrant,
+                 obj2[i_obj2].meas[0].notes);
+#endif
+/*
+* iopt=1: transfer Q, Dm, and Simple from comments in file1 to file2 and output to out_file
+* iopt=2: output of items in file2 and not in file1 to out_file
+* iopt=3: output of discrepant meas. in file2 (compared to file1) to out_file
+*/
+          strcpy(filename2, obj2[i_obj2].meas[0].filename);
+          epoch2 = (obj2[i_obj2]).meas[0].epoch;
+          rho2 = (obj2[i_obj2]).meas[0].rho;
+// Will compare measurements of file2 with corresponding meas. of file1
+// Return status1=0 when discov_name2 was found in filein1
+          status1 = astrom_get_index_from_OBJECT(filename2, epoch2, rho2, 
+                                                 obj1, nobj1, &i_obj1);
+
+#ifdef DEBUG_1
+          printf("astrom_compare2/status1=%d\n", status1);
+          printf("astrom_compare2/obj1/fname=%s rho=%.2f+/-%.2f theta=%.2f+/-%.2f epoch=%.4f dmag=%.2f quad=%d+/-%d\n", 
+                 obj1[i_obj1].meas[0].filename, 
+                 obj1[i_obj1].meas[0].rho, 
+                 obj1[i_obj1].meas[0].drho, 
+                 obj1[i_obj1].meas[0].theta,
+                 obj1[i_obj1].meas[0].dtheta,
+                 obj1[i_obj1].meas[0].epoch,
+                 obj1[i_obj1].meas[0].dmag,
+                 obj1[i_obj1].meas[0].quadrant,
+                 obj1[i_obj1].meas[0].dquadrant,
+                 obj1[i_obj1].meas[0].notes);
+#endif
+          if(status1 == 0) {
+            delta_m = obj1[i_obj1].meas[0].dmag;
+            quadrt = obj1[i_obj1].meas[0].quadrant;
+            dquadrt = obj1[i_obj1].meas[0].dquadrant;
+            is_simple = 0;
+            if(strstr(obj1[i_obj1].meas[0].notes, str_simple) != NULL) is_simple = 1;
+
+            if(iopt == 1) {
+// modify comments if there is delta_m:
+              if(delta_m > 0) {
+                sprintf(str_comments, "Dm=%.2f", delta_m);
+                astrom_add_comments(b_in, str_comments);
+// Should be used only once, so I cancel it:
+                obj1[i_obj1].meas[0].dmag = -1;
+                }
+              if((quadrt > 0) && (dquadrt != 1)) {
+                sprintf(str_comments, "Q=%d", quadrt);
+                astrom_add_comments(b_in, str_comments);
+                }
+              if(is_simple != 0) {
+                strcpy(str_comments, "Simple");
+                astrom_add_comments(b_in, str_comments);
+                }
+              fprintf(fp_out, "%s\n", b_in);
+            } else if(iopt == 3) {
+              astrom_check_if_discrepant(obj1, i_obj1, obj2, i_obj2, 
+                                         &is_discrepant);
+              if(is_discrepant) { 
+                strcpy(object_name, obj2[i_obj2].meas[0].filename);
+                pc = object_name;
+// Remove \_ in filename and change to upper case letters
+                while(*pc && (*pc != '_') && (*pc != '\\')) {
+                   *pc = toupper(*pc); pc++;
+                   }
+                *pc = '\0';
+                fprintf(fp_out, "& %s & %d & & & & & & & \\\\\n", 
+                   object_name, (int)obj2[i_obj2].meas[0].epoch);
+                fprintf(fp_out, "%s\n", b_in);
+                }
+            } // endif iopt == 3
+          } else {
+              if(iopt == 1) {
+                fprintf(fp_out, "%s\n", b_in);
+              } else if(iopt == 2) {
+                strcpy(object_name, obj2[i_obj2].meas[0].filename);
+                pc = object_name;
+// Remove \_ in filename and change to upper case letters
+                while(*pc && (*pc != '_') && (*pc != '\\')) {
+                   *pc = toupper(*pc); pc++;
+                   }
+                *pc = '\0';
+                fprintf(fp_out, "& %s & %d & & & & & & & \\\\\n", 
+                   object_name, (int)obj2[i_obj2].meas[0].epoch);
+                fprintf(fp_out, "%s\n", b_in);
+                } // endif iopt==2
+           } // endif status1 != 0 
+      } // endif status == 0
+// EOF if '&'
+   } else {  
+// Copy the other part of the file for iopt==1
+     if(iopt == 1) {
+       fprintf(fp_out, "%s\n", b_in);
+     }
+   }
+  } /* EOF if fgets() */
+} /* EOF while loop */
+
+/* Close opened files:
+*/
+fclose(fp_in2);
+fclose(fp_out);
+return(0);
+}
+/*****************************************************************************
+* Read the measurements and object parameters from the input file
+*
+* INPUT:
+* i_filename: column nber of the filename used for this measurement
+* i_eyepiece: column nber of eyepiece focal length information
+* i_rho: column nber with rho values
+* i_drho: column nber with drho values
+* i_theta: column nber with theta values
+* i_dtheta: column nber with dtheta values
+* i_notes: column nber with the notes
+* nobj: number of objects already entered into *obj
+* with_wds_data: flag set to one if wds data are in the input file
+*
+* OUTPUT:
+* obj: OBJECT structure
+* nobj: total number of objects entered into *obj
+*****************************************************************************/
+static int astrom_read_all_measures(char *in_file1,
+                         OBJECT *obj1, int *nobj1, int i_filename, int i_date,
+                         int i_filter, int i_eyepiece, int i_rho,
+                         int i_drho, int i_theta, int i_dtheta, int i_notes)
+{
+char b_in[NMAX], str_uscore[64], *pc_uscore;
+int status, i_obj1;
+int comments_wanted;
+char *pc, *pc1;
+double epoch1, rho2, err_rho2, theta2, err_theta2;
+FILE *fp_in;
+
+#ifdef DEBUG1
+printf("astrom_read_all_measures: input/nobj=%d\n", *nobj1);
+#endif
+
+/* Open input file: */
+if((fp_in = fopen(in_file1, "r")) == NULL) {
+   fprintf(stderr, "astrom_compare/Fatal error opening input file %s\n",
+           in_file1);
+    return(-1);
+  }
+
+// Underscore
+strcpy(str_uscore, "_");
+
+i_obj1 = -1;
+while(!feof(fp_in))
+{
+/* Maximum length for a line will be 170 characters: */
+  if(fgets(b_in,170,fp_in))
+  {
+   b_in[169] = '\0';
+// Remove the end of line '\n' from input line:
+   jlp_cleanup_string(b_in, 170);
+// Search for substring "_" in b_in:
+   pc_uscore = strstr(b_in, str_uscore); 
+
+  if((pc_uscore != NULL) && (b_in[0] == '&')) {
+   i_obj1++;;
+   (obj1[i_obj1]).nmeas = 0;
+
+/* Try to add a new measure: */
+     comments_wanted = 1;
+     status = astrom_add_new_measure(b_in, obj1, i_obj1, i_filename, i_date,
+                           i_filter, i_eyepiece, i_rho, i_drho, i_theta,
+                           i_dtheta, i_notes, comments_wanted);
+    if(status != 0) {
+        i_obj1--;
+    } else {
+     
+// theta is always in [0, 360.]:
+          if(obj1[i_obj1].meas[0].theta < 0.) 
+                obj1[i_obj1].meas[0].theta += 360.;
+          else if(obj1[i_obj1].meas[0].theta > 360.) 
+                obj1[i_obj1].meas[0].theta -= 360.;
+#ifdef DEBUG1
+           printf("%s\n", b_in); 
+           printf("astrom_read_all_meas/status=%d\n", 
+                   status);
+           printf("astrom_read_all_meas/nmeas=%d fname=%s eyep=%d rho=%.2f+/-%.2f theta=%.2f+/-%.2f epoch=%.4f dmag=%.2f notes=%s\n", 
+                  obj1[i_obj1].nmeas, 
+                  obj1[i_obj1].meas[0].filename, 
+                  obj1[i_obj1].meas[0].eyepiece, 
+                  obj1[i_obj1].meas[0].rho, 
+                  obj1[i_obj1].meas[0].drho, 
+                  obj1[i_obj1].meas[0].theta,
+                  obj1[i_obj1].meas[0].dtheta,
+                  obj1[i_obj1].meas[0].epoch,
+                  obj1[i_obj1].meas[0].dmag,
+                  obj1[i_obj1].meas[0].notes);
+#endif
+      }
+   } // EOF if '&'
+  } /* EOF if fgets() */
+} /* EOF while loop */
+
+*nobj1 = i_obj1 + 1;
+#ifdef DEBUG1
+printf("astrom_read_all_measures: input/nobj=%d\n", *nobj1);
+#endif
+
+fclose(fp_in);
+return(0);
+}
+/********************************************************************
+* Add delta_m to comments
+********************************************************************/
+static int astrom_add_comments(char* b_data, char* str_comments)
+{
+char *pc, buffer[256];
+
+#ifdef DEBUG1
+  printf("astrom_add_comments in: %s and str=%s\n", b_data, str_comments);
+#endif
+ strcpy(buffer, b_data);
+ pc = buffer;
+ while( strncmp(pc, "\\\\", 2)) pc++;
+ *pc = '\0';
+ sprintf(b_data, "%s %s \\\\", buffer, str_comments);
+ 
+#ifdef DEBUG1
+  printf("out: %s\n", b_data);
+#endif
+return(0);
+}
+/*********************************************************************
+* Look for a series of measurements of obj_filename at epoch1
+* Return 0 when obj_filename1 was found in OBJECT 
+*
+*********************************************************************/
+static int astrom_get_index_from_OBJECT(char* obj_filename2, double epoch2, 
+                                        double rho2, OBJECT* obj1, int nobj1, 
+                                        int *i_obj1)
+{
+char filename1[64]; 
+double epoch1, rho1;
+int ii, status0 = -1;
+
+*i_obj1 = -1;
+
+// Remove the extension ".fits" for instance:
+jlp_remove_ext_string(obj_filename2, 64);
+jlp_compact_string(obj_filename2, 64);
+#ifdef DEBUG1
+printf("\n astrom_get_index_from_OBJECT/looking for fname=>%s< in object at epoch=%4 (nobj1=%d)\n",
+         obj_filename2, epoch2, nobj1);
+#endif
+
+for(ii = 0; ii < nobj1; ii++) {
+   strcpy(filename1, obj1[ii].meas[0].filename); 
+   epoch1 = obj1[ii].meas[0].epoch;
+   rho1 = obj1[ii].meas[0].rho;
+   jlp_remove_ext_string(filename1, 64);
+   jlp_compact_string(filename1, 64);
+// Testing the filename, epoch, and rho
+   if(!strcmp(obj_filename2, filename1) && (ABS(epoch1 - epoch2) < 0.001)
+      && ((rho1 < 10 && rho2 < 10) || (MAXI((rho1/rho2),(rho2/rho1)) < 1.2))) {
+#ifdef DEBUG_1
+     printf("astrom_get_index_from_OBJECT/ fname1=%s fname2=%s epoch2=%.4f epoch1=%.4f rho2=%.4f rho1=%.4f ii=%d\n",
+            filename1, obj_filename2, epoch2, epoch1, rho2, rho1, ii);
+#endif
+     *i_obj1 = ii;
+     status0 = 0;
+     break;
+     }
+} // EOF for 
+
+return(status0);
+}
+/******************************************************************
+*
+******************************************************************/
+static int astrom_check_if_discrepant(OBJECT *obj1, int i_obj1,
+                                      OBJECT *obj2, int i_obj2, 
+                                      int *is_discrepant)
+{
+double rho1, rho2, theta1, theta2;
+int isdis = 0;
+
+*is_discrepant = 0;
+
+   rho1 = obj1[i_obj1].meas[0].rho;
+   rho2 = obj2[i_obj2].meas[0].rho;
+   if(rho1 < 0.00001) rho1 = 0.001;
+   if(rho2 < 0.00001) rho2 = 0.001;
+   theta1 = obj1[i_obj1].meas[0].theta;
+   theta2 = obj2[i_obj2].meas[0].theta;
+// theta is always in [0, 360.]:
+   if(theta1 < 0.) theta1 += 360.;
+      else if(theta1 > 360.) theta1 -= 360.;
+   if(theta2 < 0.) theta2 += 360.;
+      else if(theta2 > 360.) theta2 -= 360.;
+
+if(rho1 < 0.5) {
+  if(ABS(theta1 - theta2) > 30) isdis = 1;
+  if((ABS(rho1 / rho2) > 1.5) || (ABS(rho2 / rho1) > 1.5)) isdis = 1;
+  } else if (rho1 < 1.) {
+  if(ABS(theta1 - theta2) > 20) isdis = 1;
+  if((ABS(rho1 / rho2) > 1.3) || (ABS(rho2 / rho1) > 1.3)) isdis = 1;
+  } else {
+  if(ABS(theta1 - theta2) > 10) isdis = 1;
+  if((ABS(rho1 / rho2) > 1.2) || (ABS(rho2 / rho1) > 1.2)) isdis = 1;
+  }
+
+if(isdis == 1) *is_discrepant = 1;
+
+return(0);
+}
+// ***********************************************************
+#ifdef UUUUU
+
+static int astrom_get_meas_from_file(char *filein2, char *obj_filename1,
+                       double epoch1, 
+                       int i_filename, int i_date, int i_filter,
+                       int i_eyepiece, int i_rho, int i_drho,
+                       int i_theta, int i_dtheta, int i_notes,
+                       double *rho2, double *err_rho2, double *theta2,
+                       double *err_theta2);
 static int astrom_compare_meas(char *filein1, char *filein2, 
                                char *fulltable_fileout, char *cmp_fileout,
                                char *unres_cmp_fileout);
@@ -31,13 +644,6 @@ static int astrom_read_measures_cmp(FILE *fp_in, char *filein2,
                          int i_filter, int i_eyepiece, int i_rho,
                          int i_drho, int i_theta, int i_dtheta, int i_notes,
                          int with_wds_data);
-static int astrom_get_meas_from_file(char *filein2, char *obj_name1,
-                       double epoch1, 
-                       int i_filename, int i_date, int i_filter,
-                       int i_eyepiece, int i_rho, int i_drho,
-                       int i_theta, int i_dtheta, int i_notes,
-                       double *rho2, double *err_rho2, double *theta2,
-                       double *err_theta2);
 static int astrom_write_publi_cmp_table_gili(FILE *fp_out, 
                                   OBJECT *obj, int *index_obj, int nobj,
                                   int tabular_only, int quadrant_correction);
@@ -98,6 +704,84 @@ printf(" OK: unres_cmp_fileout=%s\n", unres_cmp_fileout);
 
 return(0);
 }
+/*********************************************************************
+* Look for measurements of obj_discov1 at epoch1
+* Return 0 when obj_name1 was found in filein2
+*
+*********************************************************************/
+static int astrom_get_meas_from_file(char *filein2, char *obj_filename1,
+                       double epoch1, 
+                       int i_filename, int i_date, int i_filter,
+                       int i_eyepiece, int i_rho, int i_drho,
+                       int i_theta, int i_dtheta, int i_notes,
+                       double *rho2, double *err_rho2, double *theta2,
+                       double *err_theta2)
+{
+char b_in[NMAX], b_data[NMAX], filename2[64];
+char *pc, filter2[64], notes2[64];
+double epoch2; 
+int eyepiece2, status, status0 = -1;
+FILE *fp_in2;
+
+// Remove the extension ".fits" for instance:
+jlp_remove_ext_string(obj_filename1, 64);
+jlp_compact_string(obj_filename1, 64);
+#ifdef DEBUG_1
+printf("\n astrom_get_meas_from_file/looking for fname=>%s< in %s\n",
+         obj_filename1, filein2);
+#endif
+
+if((fp_in2 = fopen(filein2,"r")) == NULL) {
+  fprintf(stderr, " Fatal error opening input file2 %s \n", filein2);
+  return(-1);
+  }
+
+while(!feof(fp_in2))
+{
+/* Maximum length for a line will be 170 characters: */
+  if(fgets(b_in,170,fp_in2))
+  {
+  if(b_in[0] != '%') {
+     b_in[169] = '\0';
+/* NEW/2009: I remove ^M (Carriage Return) if present: */
+    pc = b_in;
+    while(*pc) {
+    if(*pc == '\r') *pc = ' ';
+    pc++;
+    }
+    strcpy(b_data, b_in);
+    status = astrom_check_measure(b_data, i_eyepiece, i_rho, i_drho, i_theta, 
+                                i_dtheta);
+    if(status == 0) {
+#ifdef DEBUG_1
+printf("astrom_get_meas_from_file/astrom_check_measure: b_data=%s status=%d)\n",
+         b_data, status);
+#endif
+          astrom_read_new_measure(b_data, i_filename, i_date, i_filter, 
+                                  i_eyepiece, i_rho, i_drho, i_theta,
+                                  i_dtheta, i_notes, filename2, notes2, 
+                                  &epoch2, filter2, &eyepiece2,
+                                  rho2, err_rho2, theta2, err_theta2);
+// Remove the extension ".fits" for instance:
+          jlp_remove_ext_string(filename2, 64);
+          jlp_compact_string(filename2, 64);
+          if(!strcmp(obj_filename1, filename2)) {
+#ifdef DEBUG_1
+            printf("astrom_read_measures/in %s: fname=%s rho=%.2f+/-%.2f theta=%.2f+/-%.2f\n",
+                  filein2, filename2, *rho2, *err_rho2, *theta2, *err_theta2);
+#endif
+            status0 = 0;
+            break;
+            }
+
+       }
+     } // EOF if b_in[0] != '%' 
+   } // EOF if fgets... 
+
+} // EOF while
+fclose(fp_in2);
+return(status0);
+}
 /*************************************************************************
 *
 *
@@ -106,13 +790,12 @@ static int astrom_compare_meas(char *filein1, char *filein2,
                                char *fulltable_fileout, char *cmp_fileout,
                                char *unres_cmp_fileout)
 {
-FILE *fp_in1, *fp_out;
+FILE *fp_in2, *fp_out;
 int i_filename, i_date, i_filter, i_eyepiece, i_rho, i_drho, i_theta, i_dtheta;
 int i_notes, publi_mode, input_with_header;
 
-
-if((fp_in1 = fopen(filein1,"r")) == NULL) {
-  fprintf(stderr, " Fatal error opening input file1 %s \n", filein1);
+if((fp_in2 = fopen(filein2,"r")) == NULL) {
+  fprintf(stderr, " Fatal error opening input file2 %s \n", filein2);
   return(-1);
   }
 
@@ -126,7 +809,6 @@ fprintf(fp_out,"%%%% astrom_compare file1=%s and file2=%s\n", filein1, filein2);
 fprintf(fp_out,"%%%% JLP / Version of 31/03/2020 \n");
 fprintf(fp_out,"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n");
 
-/* Scan the file and make the conversion: */
 /* date in column 3
 *  eyepiece in column 5
 *  rho in column 6
@@ -194,7 +876,7 @@ astrom_read_measures_cmp(fp_in1, filein2, obj1, &nobj1,
                          i_filename, i_date, i_filter, i_eyepiece, i_rho, 
                          i_drho, i_theta, i_dtheta, i_notes, with_wds_data);
 
-#ifdef DEBUG1
+#ifdef DEBUG_1
 if(nobj1 > 1) {
 printf("Returned by astrom_read_measures: nobj1 = %d nmeas=%d rho=%.2f theta=%.2f\n", 
         nobj1, obj1[nobj1-1].nmeas, obj1[nobj1-1].meas[0].rho, 
@@ -364,13 +1046,15 @@ printf("astrom_read_measures/Adding new measurement for object #i_obj=%d nm=%d (
           else if(obj[i_obj].meas[0].theta > 360.) 
                 obj[i_obj].meas[0].theta -= 360.;
 #ifdef DEBUG
-           printf("astrom_read_meas/fname=%s nmeas=%d rho=%.2f+/-%.2f theta=%.2f+/-%.2f\n", 
-                  obj[i_obj].name, obj[i_obj].meas[0].rho, 
+           printf("astrom_read_meas/discov_name=%s nmeas=%d rho=%.2f+/-%.2f theta=%.2f+/-%.2f\n", 
+                  obj[i_obj].discov_name, 
+                  obj[i_obj].nmeas, 
+                  obj[i_obj].meas[0].rho, 
                   obj[i_obj].meas[0].drho, 
-                  (obj[i_obj]).nmeas, obj[i_obj].meas[0].theta,
+                  obj[i_obj].meas[0].theta,
                   obj[i_obj].meas[0].dtheta);
 #endif
-           strcpy(obj_name1, (obj[i_obj]).name);
+           strcpy(obj_name1, (obj[i_obj]).discov_name);
            epoch1 = (obj[i_obj]).meas[0].epoch;
 // Return 0 when obj_name1 was found in filein2
            status = astrom_get_meas_from_file(filein2, obj_name1,
@@ -408,83 +1092,6 @@ printf("astrom_read_measures/Adding new measurement for object #i_obj=%d nm=%d (
   } /* EOF if fgets() */
 } /* EOF while loop */
 return(0);
-}
-/*********************************************************************
-* Return 0 when obj_name1 was found in filein2
-*
-*********************************************************************/
-static int astrom_get_meas_from_file(char *filein2, char *obj_name1,
-                       double epoch1, 
-                       int i_filename, int i_date, int i_filter,
-                       int i_eyepiece, int i_rho, int i_drho,
-                       int i_theta, int i_dtheta, int i_notes,
-                       double *rho2, double *err_rho2, double *theta2,
-                       double *err_theta2)
-{
-char b_in[NMAX], b_data[NMAX], filename2[64];
-char *pc, filter2[64], notes2[64];
-double epoch2; 
-int eyepiece2, status, status0 = -1;
-FILE *fp_in2;
-
-// Remove the extension ".fits" for instance:
-jlp_remove_ext_string(obj_name1, 64);
-jlp_compact_string(obj_name1, 64);
-#ifdef DEBUG1
-printf("\n astrom_get_meas_from_file/looking for fname=>%s< in %s\n",
-         obj_name1, filein2);
-#endif
-
-if((fp_in2 = fopen(filein2,"r")) == NULL) {
-  fprintf(stderr, " Fatal error opening input file2 %s \n", filein2);
-  return(-1);
-  }
-
-while(!feof(fp_in2))
-{
-/* Maximum length for a line will be 170 characters: */
-  if(fgets(b_in,170,fp_in2))
-  {
-  if(b_in[0] != '%') {
-     b_in[169] = '\0';
-/* NEW/2009: I remove ^M (Carriage Return) if present: */
-    pc = b_in;
-    while(*pc) {
-    if(*pc == '\r') *pc = ' ';
-    pc++;
-    }
-    strcpy(b_data, b_in);
-    status = astrom_check_measure(b_data, i_eyepiece, i_rho, i_drho, i_theta, 
-                                i_dtheta);
-    if(status == 0) {
-#ifdef DEBUG1
-printf("astrom_get_meas_from_file/astrom_check_measure: b_data=%s status=%d)\n",
-         b_data, status);
-#endif
-          astrom_read_new_measure(b_data, i_filename, i_date, i_filter, 
-                                  i_eyepiece, i_rho, i_drho, i_theta,
-                                  i_dtheta, i_notes, filename2, notes2, 
-                                  &epoch2, filter2, &eyepiece2,
-                                  rho2, err_rho2, theta2, err_theta2);
-// Remove the extension ".fits" for instance:
-          jlp_remove_ext_string(filename2, 64);
-          jlp_compact_string(filename2, 64);
-          if(!strcmp(obj_name1, filename2)) {
-#ifdef DEBUG1
-            printf("astrom_read_measures/in %s: fname=%s rho=%.2f+/-%.2f theta=%.2f+/-%.2f\n",
-                  filein2, filename2, *rho2, *err_rho2, *theta2, *err_theta2);
-#endif
-            status0 = 0;
-            break;
-            }
-
-       }
-     } // EOF if b_in[0] != '%' 
-   } // EOF if fgets... 
-
-} // EOF while
-fclose(fp_in2);
-return(status0);
 }
 /*****************************************************************************
 * Write the LateX array in a gili's format
@@ -539,7 +1146,7 @@ for(i = 0; i < nobj; i++) {
          me->rho = NO_DATA;
 // Unresolved case:
          fprintf(fp_out,"%s & %s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata &  & Unres. \\\\\n",
-             wds_name, obj[io].name, me->epoch, me->eyepiece); //  me->notes);
+             wds_name, obj[io].discov_name, me->epoch, me->eyepiece); //  me->notes);
       } else {
 /* For DEBUG:
 if(i < 4) {
@@ -626,20 +1233,20 @@ if(i < 4) {
 /* October 2008: 3 decimals for the epoch */
   if(me->rho != NO_DATA)
     fprintf(fp_out,"%s & %s & %.3f & %d & %.3f & %.3f & %.1f%s & %.1f & %s &\\\\\n",
-         wds_name, obj[io].name, me->epoch, me->eyepiece, me->rho, me->drho,
+         wds_name, obj[io].discov_name, me->epoch, me->eyepiece, me->rho, me->drho,
          me->theta, qflag, me->dtheta, dmag_string); //, me->notes, q_notes);
   else
     fprintf(fp_out,"%s & %s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata & \\nodata &  \\\\\n",
-         wds_name, obj[io].name, me->epoch, me->eyepiece); //, me->notes);
+         wds_name, obj[io].discov_name, me->epoch, me->eyepiece); //, me->notes);
 // File was not found when cmp_me->rho == -NO_DATA
   if(cmp_me->rho != -NO_DATA) {
   if(cmp_me->rho != NO_DATA)
     fprintf(fp_out,"cmp:%s & %s & %.3f & %d & %.3f & %.3f & %.1f%s & %.1f & %s &\\\\\n",
-         wds_name, obj[io].name, me->epoch, me->eyepiece, cmp_me->rho, cmp_me->drho,
+         wds_name, obj[io].discov_name, me->epoch, me->eyepiece, cmp_me->rho, cmp_me->drho,
          cmp_me->theta, qflag, cmp_me->dtheta, dmag_string); //, me->notes, q_notes);
   else
     fprintf(fp_out,"cmp:%s & %s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata & \\nodata &  \\\\\n",
-         wds_name, obj[io].name, me->epoch, me->eyepiece); //, me->notes);
+         wds_name, obj[io].discov_name, me->epoch, me->eyepiece); //, me->notes);
   }
   } /* EOF j == 0 */
 /*** Format for subsequent lines of an object */
@@ -656,11 +1263,11 @@ if(i < 4) {
 /************ BOF Without idem  ****/
   if(me->rho != NO_DATA)
     fprintf(fp_out,"%s & %s & %.3f & %d & %.3f & %.3f & %.1f%s & %.1f & %s &\\\\\n",
-         wds_name, obj[io].name, me->epoch, me->eyepiece, me->rho, me->drho,
+         wds_name, obj[io].discov_name, me->epoch, me->eyepiece, me->rho, me->drho,
          me->theta, qflag, me->dtheta, dmag_string); //, me->notes, q_notes);
   else
     fprintf(fp_out,"%s & %s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata & \\nodata &  \\\\\n",
-         wds_name, obj[io].name, me->epoch, me->eyepiece); //, me->notes);
+         wds_name, obj[io].discov_name, me->epoch, me->eyepiece); //, me->notes);
 /************ EOF without idem  ****/
     } // End of resolved case
   } /* EOF j != 0 */
@@ -787,12 +1394,12 @@ for(i = 0; i < nobj1; i++) {
       && (cmp_me1->rho != -NO_DATA) && (cmp_me1->theta != -NO_DATA)) {
          if((ABS(me1->rho - cmp_me1->rho) > drho_max)
             || (ABS(me1->theta - cmp_me1->theta) > dtheta_max)) {
-         printf("name=%s rho=%.2f theta=%.2f Drho=%.2f Dtheta=%.2f\n",
-               (obj1[i]).name, me1->rho, me1->theta,
+         printf("discov_name=%s rho=%.2f theta=%.2f Drho=%.2f Dtheta=%.2f\n",
+               (obj1[i]).discov_name, me1->rho, me1->theta,
                ABS(me1->rho - cmp_me1->rho),
                ABS(me1->theta - cmp_me1->theta));
              strcpy((obj2[k]).wds, (obj1[i]).wds);
-             strcpy((obj2[k]).name, (obj1[i]).name);
+             strcpy((obj2[k]).discov_name, (obj1[i]).discov_name);
              (obj2[k]).nmeas = (obj1[i]).nmeas;
              (obj2[k]).WR = (obj1[i]).WR;
              (obj2[k]).WY= (obj1[i]).WY;
@@ -902,10 +1509,10 @@ for(i = 0; i < nobj1; i++) {
       && (cmp_me1->rho != -NO_DATA) && (cmp_me1->theta != -NO_DATA)) {
 // rho=NO_DATA when not resolved...
          if((cmp_me1->rho != NO_DATA) && (cmp_me1->theta != NO_DATA)) {
-             printf("name=%s rho=%.2f theta=%.2f\n",
-               (obj1[i]).name, me1->rho, me1->theta);
+             printf("discov_name=%s rho=%.2f theta=%.2f\n",
+               (obj1[i]).discov_name, me1->rho, me1->theta);
              strcpy((obj2[k]).wds, (obj1[i]).wds);
-             strcpy((obj2[k]).name, (obj1[i]).name);
+             strcpy((obj2[k]).discov_name, (obj1[i]).discov_name);
              (obj2[k]).nmeas = (obj1[i]).nmeas;
              (obj2[k]).WR = (obj1[i]).WR;
              (obj2[k]).WY= (obj1[i]).WY;
@@ -1000,3 +1607,4 @@ static int astrom_write_header1(FILE *fp_out, int nlines, int tabular_only)
 
 return(0);
 }
+#endif

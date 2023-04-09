@@ -16,7 +16,38 @@
 #include "tex_calib_utils.h" // prototypes defined here
 /*
 #define DEBUG
+#define DEBUG1
 */
+/************************************************************************
+*
+************************************************************************/
+int extract_companion_from_name(char *input_object_name, char *object_name0, 
+                                char *comp_name0, int *object_len0)
+{
+int len;
+char *pc;
+
+strcpy(object_name0, input_object_name);
+// Assume length of object_name0 is 64:
+jlp_compact_string(object_name0, 64);
+
+/* Extract companion name if present: */
+  pc = object_name0;
+  len = 0;
+  while(*pc && !isdigit(*pc)) { pc++; len++; }
+  while(*pc && isdigit(*pc)) { pc++; len++; }
+  strcpy(comp_name0, pc);
+  *pc = '\0';
+
+#ifdef DEBUG1
+printf("DEBUG1/input>%s< object >%s< companion >%s< len=%d\n", 
+       input_object_name, object_name0, comp_name0, len);
+#endif
+*object_len0 = len;
+
+return (0);
+}
+
 /*****************************************************************************
 * Read the measurements from the input tex calib line from file 
 * Example:
@@ -36,7 +67,7 @@ int tex_calib_read_measures_from_line(char *b_data, OBJECT *obj1,
                                       int in_calib_fmt)
 {
 int i_WDSName, i_ObjectName, i_eyepiece, i_filter; 
-int i_epoch, i_rho, i_drho, i_theta, i_dtheta;
+int i_epoch, i_rho, i_drho, i_theta, i_dtheta, i_dmag;
 int status = -1, iverbose = 0;
 double epoch1, rho1, drho1, theta1, dtheta1, dmag1, ddmag1, ww;
 int eyepiece1, quadrant1, dquadrant1;
@@ -66,12 +97,14 @@ ddmag1 = NO_DATA;
 * i_theta: column nber with theta values
 * i_dtheta: column nber with dtheta values
 * i_notes: column nber with the notes
+* i_dmag: column nber with dmag values
 */
 
 i_WDSName = 1;
 i_ObjectName = 2;
 i_epoch = 3;
 // Gili's format: no filter 
+//printf("in_calib_fmt=%d (=1 if Gili, ie, without filter)\n", in_calib_fmt);
 if(in_calib_fmt == 1) {
   i_filter = -1;
   i_eyepiece = 4;
@@ -84,9 +117,18 @@ i_rho = i_eyepiece + 1;
 i_drho = i_rho + 1; 
 i_theta = i_drho + 1; 
 i_dtheta = i_theta + 1; 
+i_dmag = i_dtheta + 1;
 
 (obj1[*nobj1]).nmeas = 1;
 me = &(obj1[*nobj1]).meas[0];
+strcpy((obj1[*nobj1]).wds, "");
+strcpy((obj1[*nobj1]).discov_name, "");
+me->rho = NO_DATA;
+me->drho = NO_DATA;
+me->theta = NO_DATA;
+me->dtheta = NO_DATA;
+me->epoch = NO_DATA;
+me->dmag = NO_DATA;
 status = latex_read_svalue(b_data, WDSName1, i_WDSName);
 if(status == 0) strcpy((obj1[*nobj1]).wds, WDSName1);
 status = latex_read_svalue(b_data, ObjectName1, i_ObjectName);
@@ -107,13 +149,15 @@ if(status == 0) {
    printf("rho=%.2f (NO_DATA=%.2f) i_rho=%d, status=%d\n", 
           rho1, NO_DATA, i_rho, status);
 #endif
-  }
+  } 
 status = latex_read_dvalue(b_data, &drho1, i_drho, iverbose);
 if(status == 0) me->drho = drho1;
 status = latex_read_dvalue(b_data, &theta1, i_theta, iverbose);
 if(status == 0) me->theta = theta1;
 status = latex_read_dvalue(b_data, &dtheta1, i_dtheta, iverbose);
 if(status == 0) me->dtheta = dtheta1;
+status = latex_read_dvalue(b_data, &dmag1, i_dmag, iverbose);
+if(status == 0) me->dmag = dmag1;
 status = latex_read_dvalue(b_data, &ww, i_eyepiece, iverbose);
 if(status == 0) {
    eyepiece1 = (int)(ww+0.5);
@@ -196,7 +240,9 @@ return(0);
 ***************************************************************************/
 int tex_calib_compare(double rho3, double err_rho3, double theta3,
                       double err_theta3, double rho1, double err_rho1,
-                      double theta1, double err_theta1, int *compatible_meas31)
+                      double theta1, double err_theta1, 
+                      double max_drho, double max_dtheta, 
+                      int *compatible_meas31)
 {
 int status = -1;
 double D_rho, D_theta;
@@ -205,8 +251,8 @@ double D_rho, D_theta;
  if(theta3 > 180.) theta3 -= 180.;
  if(theta1 > 180.) theta1 -= 180.;
  D_theta = ABS(theta3 - theta1);
- if((D_rho < 0.1)
-    && (D_theta < 10.) ) {
+ if((D_rho < max_drho)
+    && (D_theta < max_dtheta) ) {
     *compatible_meas31 = 1;
     status = 0;
     }
@@ -233,10 +279,16 @@ int tex_calib_get_meas_from_object(OBJECT *obj1, int nobj1,
                                    double *rho1, double *err_rho1, 
                                    double *theta1, double *err_theta1)
 {
-char wds_name[64], discov_name[64];
+char wds_name[64], discov_name[64], object_name0[64], comp_name0[64], *pc;
+char discov_name1[64], discov_comp1[64];
 double epoch_obs;
 MEASURE *me;
-int i, status = -1, ifound = -1;
+int i, status = -1, ifound = -1, len0, len1, maxlen0;
+
+strcpy(object_name0, ObjectName0);
+
+/* Extract companion name if present: */
+extract_companion_from_name(ObjectName0, object_name0, comp_name0, &len0);
 
 // First go looking for WDSName:
 for(i = 0; i < nobj1; i++) {
@@ -246,12 +298,14 @@ for(i = 0; i < nobj1; i++) {
     break;
     }
   }
-// Second go looking for WDSName && ObjectName (only the first 4 characters):
+// Second go looking for WDSName && ObjectName (only the first maxlen0 characters):
 for(i = 0; i < nobj1; i++) {
   strcpy(wds_name, obj1[i].wds);
   strcpy(discov_name, obj1[i].discov_name);
+  extract_companion_from_name(discov_name, discov_name1, discov_comp1, &len1);
+  maxlen0 = MAXI(len0, len1);
   if((strcmp(WDSName0, wds_name) == 0)
-     && (strncmp(ObjectName0, discov_name, 4) == 0)){
+     && (strncmp(object_name0, discov_name, maxlen0) == 0)){
     ifound = i;
     break;
     }
@@ -260,9 +314,11 @@ for(i = 0; i < nobj1; i++) {
 for(i = 0; i < nobj1; i++) {
   strcpy(wds_name, obj1[i].wds);
   strcpy(discov_name, obj1[i].discov_name);
+  extract_companion_from_name(discov_name, discov_name1, discov_comp1, &len1);
+  maxlen0 = MAXI(len0, len1);
   epoch_obs = (obj1[i].meas[0]).epoch;
   if((strcmp(WDSName0, wds_name) == 0)
-     && (strncmp(ObjectName0, discov_name, 4) == 0)
+     && (strncmp(object_name0, discov_name, maxlen0) == 0)
      && (ABS(epoch_obs - epoch_obs0) < 0.01) ){
     ifound = i;
     break;
@@ -283,6 +339,79 @@ if(ifound >= 0) {
   }
 return(status);
 }
+/***************************************************************************
+* Get measures from OBJECT
+* Same as tex_calib_from_object, but with fewer parameters when object was created with Gili's csv file 
+*
+* INPUT:
+*  WDSName0, ObjectName0
+*
+* OUTPUT:
+*  WDSName1, ObjectName1
+*  epoch1, rho1, drho1, theta1, dtheta1
+***************************************************************************/
+int tex_calib_get_meas_from_csv_object(OBJECT *obj1, int nobj1, 
+                                   char *ObjectName0, double epoch_obs0,
+                                   char *ObjectName1, double *epoch1,
+                                   int *eyep1, double *rho1, double *err_rho1, 
+                                   double *theta1, double *err_theta1,
+                                   double *dmag1)
+{
+char discov_name[64], object_name0[64], comp_name0[64];
+char discov_name1[64], discov_comp1[64];
+double epoch_obs;
+MEASURE *me;
+int i, status = -1, ifound = -1, len0, len1, maxlen0;
+
+strcpy(object_name0, ObjectName0);
+jlp_compact_string(object_name0, 64);
+
+/* Extract companion name if present: */
+extract_companion_from_name(ObjectName0, object_name0, comp_name0, &len0);
+
+// First go looking for ObjectName (first maxlen0 characters):
+for(i = 0; i < nobj1; i++) {
+  strcpy(discov_name, obj1[i].discov_name);
+  jlp_compact_string(discov_name, 64);
+  extract_companion_from_name(discov_name, discov_name1, discov_comp1, &len1);
+  maxlen0 = MAXI(len0, len1);
+  if(strncmp(object_name0, discov_name, maxlen0) == 0){
+    ifound = i;
+    break;
+    }
+  }
+
+// Second go looking for ObjectName && Epoch:
+for(i = 0; i < nobj1; i++) {
+  strcpy(discov_name, obj1[i].discov_name);
+  jlp_compact_string(discov_name, 64);
+  extract_companion_from_name(discov_name, discov_name1, discov_comp1, &len1);
+  maxlen0 = MAXI(len0, len1);
+  epoch_obs = (obj1[i].meas[0]).epoch;
+  if((strncmp(object_name0, discov_name, maxlen0) == 0)
+     && (ABS(epoch_obs - epoch_obs0) < 0.01) ){
+    ifound = i;
+    break;
+    }
+  }
+
+if(ifound >= 0) {
+  strcpy(ObjectName1, obj1[ifound].discov_name);
+  printf("UUUU/ObjectName1=>%s< object_name=>%s< \n", ObjectName1, object_name0);
+  me = &(obj1[ifound]).meas[0];
+  *epoch1 = me->epoch;
+  *eyep1 = me->eyepiece;
+  *rho1 = me->rho;
+  *err_rho1 = me->drho;
+  *theta1 = me->theta;
+  *err_theta1 = me->dtheta;
+  *dmag1 = me->dmag;
+  status = 0;
+  }
+
+return(status);
+}
+
 /*****************************************************************************
 * Write the LateX array in a new format 
 *
@@ -535,7 +664,6 @@ for(i = 0; i < nobj; i++) {
       if(me->rho <= 0.1) {
 // If too small, invalidate it:
          me->rho = NO_DATA;
-         printf("ZZZZ:Unresolved case 1 ! write fp_out \n");
 // Unresolved case:
          fprintf(fp_out,"%s & %s%s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata &  & Unres. \\\\\n", 
              wds_name, obj[io].discov_name, obj[io].comp_name, 
@@ -622,7 +750,6 @@ WWWWWWWWWWWWWWWW **************/
          me->theta, qflag, me->dtheta, dmag_string, nd_notes); //, me->notes, q_notes);
   else {
 // Doesn't seem to occur:
-         printf("ZZZZ:Unresolved case 2 ! write fp_out \n");
          fprintf(fp_out,"%s & %s%s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata &  & Unres. \\\\\n", 
              wds_name, obj[io].discov_name, obj[io].comp_name, 
              me->epoch, me->eyepiece); //  me->notes);

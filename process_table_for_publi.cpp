@@ -806,14 +806,17 @@ static int extract_large_resid_table1(char *in_fname, char *out_fname,
                                       double rho_res_min, double theta_res_min)
 {
 char in_line[256], buffer[256]; 
-char rho_res_str[40], theta_res_str[40], orbit_ref[40];
-char discov_name[40], wds_name[40], label[64]; 
+char rho_res_str[40], theta_res_str[40], orbit_ref[40], no_data[64];
+char discov_name[40], wds_name[40], rho_meas[40], label[64]; 
 int iline, status, verbose_if_error = 0, nobjects, orbit_grade;
-double rho_res_val, theta_res_val, dval;
+double rho_res_val, theta_res_val, rho_obs_val, rho_calc_val; 
+double dval, relative_test;
 int i;
 
 time_t ttime = time(NULL);
 FILE *fp_out, *fp_in;
+
+strcpy(no_data, "\\nodata");
 
 /* Open input table: */
 if((fp_in = fopen(in_fname, "r")) == NULL) {
@@ -871,6 +874,15 @@ while(!feof(fp_in)) {
 /* Get discov_name from column 2: */
      latex_get_column_item(in_line, discov_name, 2, verbose_if_error);
 
+/* Get rho_obs from column 5: */
+   rho_obs_val = -1;
+   if(latex_get_column_item(in_line, rho_meas, 5, verbose_if_error) == 0){
+    jlp_clean_dollars(rho_meas, 40);
+    if(strcmp(rho_meas, no_data)) {
+      if(sscanf(rho_meas, "%lf", &dval) == 1) rho_obs_val = dval;
+      }
+   }
+
 /* Get orbit_ref from column 11: */
      verbose_if_error = 0;
      orbit_ref[0] = '\0';
@@ -885,22 +897,30 @@ while(!feof(fp_in)) {
       rho_res_val = 0;
       theta_res_val = 0;
       if(latex_get_column_item(in_line, rho_res_str, 12, verbose_if_error) == 0){
-printf("ZZZAA: rho_res=%s\n", rho_res_str);
        jlp_clean_dollars(rho_res_str, 40);
        if(sscanf(rho_res_str, "%lf", &dval) == 1) rho_res_val = dval;
-printf("ZZZA: rho_res=%s : value=%f\n", rho_res_str, dval);
+       rho_calc_val = rho_obs_val - rho_res_val;
        if(latex_get_column_item(in_line, theta_res_str, 13, verbose_if_error) == 0){
-printf("ZZZAA: theta_res=%s\n", theta_res_str);
         jlp_clean_dollars(theta_res_str, 40);
         if(sscanf(theta_res_str, "%lf", &dval) == 1) theta_res_val = dval;
-printf("ZZZA: theta_res=%s : value=%f\n", theta_res_str, dval);
        }
-    if((ABS(rho_res_val) > rho_res_min) 
-       || (ABS(theta_res_val) > theta_res_min)) {
-    printf("ZZZADEBUG/ rho_res_min=%f theta_res_min=%f\n", 
-               rho_res_min, theta_res_min);
-    printf("DEBUG/ wds_name=%s discov_name=%s rho_res=%f theta_res=%f\n", 
-            wds_name, discov_name, rho_res_val, theta_res_val);
+     relative_test = MAXI(rho_obs_val/rho_calc_val, rho_calc_val/rho_obs_val); 
+// JLP2022: if rho < 1., test on rho_res > rho_res_min
+// JLP2022: if rho > 1., test on MAXI(rho_obs/rho_calc, rho_calc/rho_obs) > 1.1 
+/*
+    if(
+      ((rho_obs_val < 1.) && (ABS(rho_res_val) > rho_res_min)) 
+     || ((rho_obs_val > 1.) && (relative_test > 1.2)) 
+     || (ABS(theta_res_val) > theta_res_min)
+*/
+    if(
+      (ABS(rho_res_val) > rho_res_min) 
+     || (ABS(theta_res_val) > theta_res_min)
+     ) {
+    printf("ZZZADEBUG/ rho_res_min=%f theta_res_min=%f relative_test=%f\n", 
+               rho_res_min, theta_res_min, relative_test);
+    printf("DEBUG/ wds_name=%s discov_name=%s rho=%.3f rho_res=%.3f theta_res=%.2f\n", 
+            wds_name, discov_name, rho_obs_val, rho_res_val, theta_res_val);
 #ifdef DEBUG
 #endif
 // SHOULD REMOVE THE LAST COLUMNS FIRST !!!!

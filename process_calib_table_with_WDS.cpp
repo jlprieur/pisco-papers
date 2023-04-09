@@ -2,12 +2,14 @@
 * "process_table1_with WDS.cpp"
 *
 * Process "full_tab_calib.tex"
-* - iop=1,delta_rho_rho_max,delta_theta_max generate table with the latest WDS (rho,theta) 
+* - iopt=1,delta_rho_rho_max,delta_theta_max generate table with the latest WDS (rho,theta) 
 *   measurements and comparison in the last columns, with delta_rho_rho_max,dtheta thresholds
 *   for output 
-* - iop=2,spmin,spmax generate table with all the WDS spectroscopic 
+* - iopt=2,spmin,spmax generate table with all the WDS spectroscopic 
 *   classification in the last column, ans spmin,spmax for output 
 *   Ex: iop=2,m1V,k7V will generate the table with the white darfs  
+* - iopt=3, check the presence of AB components in the WDS catalog 
+* - iopt=4, look for names of double stars that are not in the WDS catalog 
 *
 * JLP 
 * Version 10/05/2021
@@ -21,10 +23,12 @@
 #include "jlp_string.h"  // (in jlplib/jlp_fits/ ) jlp_cleanup_..
 #include "jlp_catalog_utils.h"  // ABS 
 #include "WDS_catalog_utils.h"  // get_data_from_WDS_catalog()
+#include "tex_calib_utils.h"  // extract_companion_from_name()
 #include "astrom_utils1.h" // astrom_read_object_data_for_name_only()
 
-/*
 #define DEBUG
+/*
+#define DEBUG1
 */
 
 typedef struct {
@@ -58,6 +62,10 @@ static int init_psc_meas(PSC_MEAS *psc0, char* wds0, char* dsc0, double epoch0,
                          double drmeas0, double tmeas0, double dtmeas0, 
                          double dm0, double rres0, double tres0);
 static int printf_psc_meas(PSC_MEAS psc0, char *label);
+static int check_AB_components(char *in_fname, char *out_fname, 
+                               char *wds_cat_fname);
+static int check_if_known_objects(char *in_fname, char *out_fname, 
+                                  char *wds_cat_fname);
 
 static int jlp_clean_dollars(char *str0, int str_len0);
 /*************************************************************************
@@ -134,12 +142,15 @@ return(0);
 
 /***********************************************************************
 *
-* - iop=1,delta_rho_rho_max,delta_theta_max generate table with the latest WDS (rho,theta) 
+* - iopt=1,delta_rho_rho_max,delta_theta_max generate table with the latest WDS (rho,theta) 
 *   measurements and comparison in the last columns, with delta_rho_rho,dtheta thresholds
 *   for output 
-* - iop=2,spmin,spmax generate table with all the WDS spectroscopic 
+* - iopt=2,spmin,spmax generate table with all the WDS spectroscopic 
 *   classification in the last column, ans spmin,spmax for output 
 *   Ex: iop=2,m1V,k7V will generate the table with the white darfs  
+* - iopt=3, check the presence of AB components in the WDS catalog 
+*   and in the input latex file
+* - iopt=4, look for names of double stars that are not in the WDS catalog 
 ************************************************************************/
 int main(int argc, char *argv[])
 {
@@ -150,9 +161,12 @@ int iopt, resid_only;
 
 if(argc != 5) {
   printf("Syntax:\n"); 
-  printf("Option1: latest rho,theta WDS meas. and comp. in the last cols. \n");
+  printf("Option1: add latest rho,theta WDS meas. and comp. in the last cols. \n");
   printf(" 1,delta_rho_rho_max,delta_theta_max for output \n");
   printf("process_calib_table_with_WDS in_table out_table wds_catalog 1,0.2,20.\n");
+  printf("Option2: look for classification \n");
+  printf(" 2,sp_mini,sp_maxi \n");
+  printf("process_calib_table_with_WDS in_table out_table wds_catalog 2,0.2,20.\n");
   return(-1);
 }
 strcpy(in_fname, argv[1]);
@@ -161,29 +175,40 @@ strcpy(wds_cat_fname, argv[3]);
 sscanf(argv[4], "%d", &iopt);
 if(iopt == 1)
    sscanf(argv[4], "%d,%lf,%lf", &iopt, &delta_rho_rho_max, &delta_theta_max);
-else 
+else if(iopt == 2)
    sscanf(argv[4], "%d,%s,%s", &iopt, &sp_mini, &sp_maxi);
+else if(iopt == 3)
+   sscanf(argv[4], "%d", &iopt);
 
 printf("OK: in_table=%s output=%s wds_cat=%s\n", 
         in_fname, out_fname, wds_cat_fname); 
 if(iopt == 1) {
   printf("OK: iopt=%d delta_rho_rho_max=%f delta_theta_max=%f\n", 
          iopt, delta_rho_rho_max, delta_theta_max); 
-} else { 
+} else if(iopt == 2) { 
   printf("OK: iopt=%d sp_mini=%s sp_maxi=%s\n", 
          iopt, sp_mini, sp_maxi); 
+} else { 
+  printf("OK: iopt=%d\n", 
+         iopt); 
 }
 
 count_all_objects(in_fname);
 switch(iopt) {
   case 1:
   default:
-     add_wds_meas_to_table1(in_fname, out_fname, wds_cat_fname, delta_rho_rho_max, 
-                           delta_theta_max); 
+     add_wds_meas_to_table1(in_fname, out_fname, wds_cat_fname, 
+                            delta_rho_rho_max, delta_theta_max); 
      break;
   case 2:
      extract_white_dwarfs_from__table1(in_fname, out_fname, wds_cat_fname,
                                        sp_mini, sp_maxi);
+     break;
+  case 3:
+     check_AB_components(in_fname, out_fname, wds_cat_fname);
+     break;
+  case 4:
+     check_if_known_objects(in_fname, out_fname, wds_cat_fname);
      break;
   }
 return(0);
@@ -243,6 +268,7 @@ while(!feof(fp_in)) {
      nlines_meas++;
 /* Get wds_name from column 1: */
      latex_get_column_item(in_line, wds_name, 1, verbose_if_error);
+     jlp_compact_string(wds_name, 40);
 /* Get discov_name from column 2: */
      latex_get_column_item(in_line, discov_name, 2, verbose_if_error);
      if(strcmp(old_discov_name, discov_name) != 0) {
@@ -303,7 +329,7 @@ while(!feof(fp_in)) {
         nresid++;
         }
 #ifdef DEBUG
-       printf("wds_name=%s discov_name=%s rho=%f drho=%f\n",
+       printf("wds_name=%s< discov_name=%s< rho=%f drho=%f\n",
                wds_name, discov_name, rho_val, drho_val);
 #endif
 /*
@@ -397,16 +423,17 @@ while(!feof(fp_in)) {
 // Remove all the non-printable characters and the end of line '\n' 
 // from input line:
       jlp_cleanup_string(in_line, 256);
-#ifdef DEBUG
-      printf("in_line=%s\n", in_line);
-#endif
       strcpy(in_line3, in_line);
 
 // Good lines start with a digit (WDS names...)
 // Lines starting with % are ignored
     if(isdigit(in_line[0])) { 
+#ifdef DEBUG
+      printf("in_line=%s\n", in_line);
+#endif
 /* Get wds_name from column 1: */
      latex_get_column_item(in_line, wds_name, 1, verbose_if_error);
+     jlp_compact_string(wds_name, 40);
 /* Get discov_name from column 2: */
      latex_get_column_item(in_line, full_discov_name, 2, verbose_if_error);
 
@@ -480,6 +507,8 @@ printf("%s = %s%s WY=%.2f WR=%.2f WT=%.1f \n",
     } // EOF if wds_meas_found == 1
 
       if(((delta_rho_rho != 12345.) && (ABS(delta_rho_rho) > delta_rho_rho_max)) 
+// I add this to avoid too many output unuseful lines :
+       && ((rho_val > 0.2) && (WdsLastRho > 0.2))
        || ((delta_theta != 12345.) && (ABS(delta_theta) > delta_theta_max))){ 
           printf("\nFrom calib table: %s %s %s rho=%.3f theta=%.1f\n",
           discov_name, comp_name, wds_name, rho_val, theta_val);
@@ -498,6 +527,246 @@ printf("%s = %s%s WY=%.2f WR=%.2f WT=%.1f \n",
              printf("delta_theta=%f \n", delta_theta); 
             }
         } // EOF delta_rho_rho != 12345
+
+    }/* EOF if !isdigit % ... */
+
+
+  } /* EOF if fgets */ 
+ } /* EOF while ... */
+printf("process_table1: %d lines sucessfully read and processed\n", 
+        iline);
+
+/* Close opened files:
+*/
+fclose(fp_in);
+fclose(fp_out);
+
+return(0);
+}
+/************************************************************************
+* Scan the calib file and check the consistency of AB components 
+*
+* From WDS catalog, retrieve:
+* discoverer and component
+*
+* INPUT:
+* in_fname: input table filename
+* out_fname: output Latex filename
+* wds_cat_fname: WDS catalog filename
+*  e.g., wdsweb_summ.txt (used to obtain the last WDS observations)
+*
+*************************************************************************/
+static int check_AB_components(char *in_fname, char *out_fname, 
+                               char *wds_cat_fname)
+{
+char in_line[256], in_line2[256], in_line3[256]; 
+char full_discov_name[64], discov_name[64], wds_name[64], label[64]; 
+char buffer[256], *pc, wds_discov_name[64], wds_comp_name[64];
+char comp_name[64], wds_name_from_WDS_catalog[64]; 
+int iline, status, verbose_if_error = 0;
+int ifound, object_len0;
+FILE *fp_in, *fp_out;
+time_t ttime = time(NULL);
+
+/* Open input table: */
+if((fp_in = fopen(in_fname, "r")) == NULL) {
+ fprintf(stderr, "add_wds_meas_to_table1/Fatal error opening input table %s\n",
+         in_fname);
+ return(-1);
+ }
+
+/* Open output table: */
+if((fp_out = fopen(out_fname, "w")) == NULL) {
+ fprintf(stderr, "add_wds_meas_to_table1/Fatal error opening output file: %s\n",
+         out_fname);
+ return(-1);
+ }
+
+/* Header of the output Latex table: */
+fprintf(fp_out, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
+fprintf(fp_out, "%% Routine check AB comp using %s\n", wds_cat_fname);
+fprintf(fp_out, "%% Created from %s, on %s\n", 
+        in_fname, ctime(&ttime));
+fprintf(fp_out, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
+
+iline = 0;
+
+while(!feof(fp_in)) {
+  if(fgets(in_line, 256, fp_in)) {
+    iline++;
+// Remove all the non-printable characters and the end of line '\n' 
+// from input line:
+      jlp_cleanup_string(in_line, 256);
+      strcpy(in_line3, in_line);
+
+// Good lines start with a digit (WDS names...)
+// Lines starting with % are ignored
+    if(isdigit(in_line[0])) { 
+/* Get wds_name from column 1: */
+     latex_get_column_item(in_line, wds_name, 1, verbose_if_error);
+/* Get discov_name from column 2: */
+     latex_get_column_item(in_line, full_discov_name, 2, verbose_if_error);
+
+// Split discov_name and comp_name:
+      jlp_split_discov_comp(full_discov_name, 64, discov_name, comp_name);
+
+/* Remove the extra-blanks: */
+     jlp_trim_string(discov_name, 64);
+     jlp_trim_string(comp_name, 64);
+
+#ifdef DEBUG1
+printf("From calib table: discov_name=%s< comp_name=%s< wds_name=>%s< \n",
+       discov_name, comp_name, wds_name);
+#endif
+// Change some companion names:
+  if(!strcmp(comp_name, "ab")) strcpy(comp_name, "AB");
+  if(!strcmp(comp_name, "bc")) strcpy(comp_name, "BC");
+  if(!strcmp(comp_name, "cd")) strcpy(comp_name, "CD");
+  if(!strcmp(comp_name, "ac")) strcpy(comp_name, "AC");
+  if(!strcmp(comp_name, "ab-c")) strcpy(comp_name, "AB-C");
+
+  search_discov_name_in_WDS_catalog(wds_cat_fname, discov_name,
+                                    comp_name, wds_name_from_WDS_catalog, 
+                                    wds_discov_name, wds_comp_name,
+                                    &ifound);
+  if(ifound == 1) {
+#ifdef DEBUG1
+printf("%s = %s comp=%s Wdiscov=%s< WComp=%s< \n",
+       wds_name, discov_name, comp_name, wds_discov_name, wds_comp_name);
+#endif
+
+// Save to output file when AB is seen on only one:
+   if(((comp_name[0] == 0) && (strcmp(wds_comp_name, "AB") == 0)) 
+      || ((wds_comp_name[0] == 0) && (strcmp(comp_name, "AB") == 0))) 
+      {
+      printf("%s\n 7777 discov_name=%s comp_name=%s WDiscovName=%s WCompName=%s\n", 
+                    in_line3, discov_name, comp_name, wds_discov_name, wds_comp_name);
+      fprintf(fp_out, "%s\n 7777 discov_name=%s comp_name=%s WDiscovName=%s WCompName=%s\n", 
+                    in_line3, discov_name, comp_name, wds_discov_name, wds_comp_name);
+     }
+    } // if ifound
+
+    }/* EOF if !isdigit % ... */
+
+
+  } /* EOF if fgets */ 
+ } /* EOF while ... */
+printf("process_table1: %d lines sucessfully read and processed\n", 
+        iline);
+
+/* Close opened files:
+*/
+fclose(fp_in);
+fclose(fp_out);
+
+return(0);
+}
+/************************************************************************
+* Scan the calib file and check if all objects are known in the WDS catalog 
+*
+* From WDS catalog, retrieve:
+* discoverer and component
+*
+* INPUT:
+* in_fname: input table filename
+* out_fname: output Latex filename
+* wds_cat_fname: WDS catalog filename
+*  e.g., wdsweb_summ.txt (used to obtain the last WDS observations)
+*
+*************************************************************************/
+static int check_if_known_objects(char *in_fname, char *out_fname, 
+                               char *wds_cat_fname)
+{
+char in_line[256], in_line2[256], in_line3[256]; 
+char full_discov_name[64], discov_name[64], wds_name[64], label[64]; 
+char buffer[256], *pc, wds_discov_name[64], wds_comp_name[64];
+char comp_name[64], wds_name_from_WDS_catalog[64]; 
+int iline, status, verbose_if_error = 0;
+int ifound, object_len0, is_not_new_double;
+FILE *fp_in, *fp_out;
+time_t ttime = time(NULL);
+
+/* Open input table: */
+if((fp_in = fopen(in_fname, "r")) == NULL) {
+ fprintf(stderr, "add_wds_meas_to_table1/Fatal error opening input table %s\n",
+         in_fname);
+ return(-1);
+ }
+
+/* Open output table: */
+if((fp_out = fopen(out_fname, "w")) == NULL) {
+ fprintf(stderr, "add_wds_meas_to_table1/Fatal error opening output file: %s\n",
+         out_fname);
+ return(-1);
+ }
+
+/* Header of the output Latex table: */
+fprintf(fp_out, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
+fprintf(fp_out, "%% Routine check AB comp using %s\n", wds_cat_fname);
+fprintf(fp_out, "%% Created from %s, on %s\n", 
+        in_fname, ctime(&ttime));
+fprintf(fp_out, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
+
+iline = 0;
+
+while(!feof(fp_in)) {
+  if(fgets(in_line, 256, fp_in)) {
+    iline++;
+// Remove all the non-printable characters and the end of line '\n' 
+// from input line:
+      jlp_cleanup_string(in_line, 256);
+      strcpy(in_line3, in_line);
+
+// Good lines start with a digit (WDS names...)
+// Lines starting with % are ignored
+    if(isdigit(in_line[0])) { 
+/* Get wds_name from column 1: */
+     latex_get_column_item(in_line, wds_name, 1, verbose_if_error);
+/* Get discov_name from column 2: */
+     latex_get_column_item(in_line, full_discov_name, 2, verbose_if_error);
+
+// Split discov_name and comp_name:
+      jlp_split_discov_comp(full_discov_name, 64, discov_name, comp_name);
+
+/* Remove the extra-blanks: */
+     jlp_trim_string(discov_name, 64);
+     jlp_trim_string(comp_name, 64);
+
+#ifdef DEBUG1
+printf("From calib table: discov_name=%s< comp_name=%s< wds_name=>%s< \n",
+       discov_name, comp_name, wds_name);
+#endif
+// Change some companion names:
+  if(!strcmp(comp_name, "ab")) strcpy(comp_name, "AB");
+  if(!strcmp(comp_name, "bc")) strcpy(comp_name, "BC");
+  if(!strcmp(comp_name, "cd")) strcpy(comp_name, "CD");
+  if(!strcmp(comp_name, "ac")) strcpy(comp_name, "AC");
+  if(!strcmp(comp_name, "ab-c")) strcpy(comp_name, "AB-C");
+
+  is_not_new_double = 0;
+  if(strstr(in_line, "ND") == NULL) is_not_new_double = 1;
+
+  ifound = 0;
+  if(is_not_new_double == 1) {
+      search_discov_name_in_WDS_catalog(wds_cat_fname, discov_name,
+                                        comp_name, wds_name_from_WDS_catalog, 
+                                        wds_discov_name, wds_comp_name,
+                                        &ifound);
+    }
+  if((ifound == 0) && (is_not_new_double == 1)) {
+    strcpy(wds_discov_name, "");
+    strcpy(wds_comp_name, "");
+#ifdef DEBUG1
+printf("%s = %s comp=%s Wdiscov=%s< WComp=%s< \n",
+       wds_name, discov_name, comp_name, wds_discov_name, wds_comp_name);
+#endif
+
+// Save to output file when unknown object:
+      printf("%s\n 7777 discov_name=%s comp_name=%s WDiscovName=%s WCompName=%s\n", 
+                    in_line3, discov_name, comp_name, wds_discov_name, wds_comp_name);
+      fprintf(fp_out, "%s\n 7777 discov_name=%s comp_name=%s WDiscovName=%s WCompName=%s\n", 
+                    in_line3, discov_name, comp_name, wds_discov_name, wds_comp_name);
+    } // if not ifound
 
     }/* EOF if !isdigit % ... */
 
@@ -567,13 +836,13 @@ while(!feof(fp_in)) {
 // Remove all the non-printable characters and the end of line '\n'
 // from input line:
       jlp_cleanup_string(in_line, 256);
-#ifdef DEBUG
-//      printf("in_line=%s\n", in_line);
-#endif
 
 // Good lines start with a digit (WDS names...)
 // Lines starting with % are ignored
     if(isdigit(in_line[0])) {
+#ifdef DEBUG
+//      printf("in_line=%s\n", in_line);
+#endif
 /* Get wds_name from column 1: */
      latex_get_column_item(in_line, wds_name, 1, verbose_if_error);
 /* Get discov_name from column 2: */
