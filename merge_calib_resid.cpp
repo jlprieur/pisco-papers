@@ -7,6 +7,8 @@
 * Version 15/09/2011
 *************************************************************************/
 #include "jlp_catalog_utils.h"
+#include "jlp_string.h"
+#include "latex_utils.h"
 
 #define DEBUG
 #define DEBUG_1
@@ -83,10 +85,9 @@ char object_name[40], ads_name[40], discov_name[40], comp_name[40];
 char buffer[128], orbit_ref[60*50], quadrant_discrep[20]; 
 char previous_object_name[40], previous_comp_name[40];
 char sign_Drho[20], sign_Dtheta[20];
-double epoch_o, rho_o_c[50], theta_o_c[50];
-int iline, norbits_found, status, verbose_if_error = 0;
+double epoch_o, rho_o, rho_o_c[50], theta_o_c[50];
+int i, iline, norbits_found, status, orbit_grade, verbose_if_error = 0;
 int ref_slength = 60, nmax_orbits = 50;
-register int i;
 
 previous_object_name[0] = '\0';
 previous_comp_name[0] = '\0';
@@ -103,7 +104,7 @@ while(!feof(fp_calib)) {
     else if(in_line[0] != '%' && (isdigit(in_line[0]) 
         || !strncmp(in_line, "\\idem", 5))) {
 // Remove the end of line '\n' from input line:
-      cleanup_string(in_line, 256);
+      jlp_cleanup_string(in_line, 256);
 
 /* Old version : read orbit flag in column 11: 
       status = latex_get_column_item(in_line, buffer, 11, verbose_if_error);
@@ -142,10 +143,19 @@ while(!feof(fp_calib)) {
          exit(-1);
          }
 
+/* Read rho in column irho=5 if Gili's format: */
+      rho_o = 0.;
+      status = latex_get_column_item(in_line, buffer, 5, verbose_if_error);
+      if(status || (sscanf(buffer,"%lf", &rho_o) != 1)) {
+         fprintf(stderr,"Warning: error reading rho_o: %s (line=%d) Unres ?\n",
+                 in_line, iline);
+         }
+
 /* Retrieve the residuals for this object and epoch in the residual table: */
       strcpy(quadrant_discrep,"");
       get_values_from_RESID_table(resid_fname, object_name, comp_name, epoch_o,
-                                  orbit_ref, ref_slength, rho_o_c, theta_o_c, 
+                                  rho_o, orbit_ref, &orbit_grade,
+                                  ref_slength, rho_o_c, theta_o_c, 
                                   quadrant_discrep, &norbits_found, 
                                   nmax_orbits);
       if(!norbits_found) {
@@ -195,7 +205,7 @@ while(!feof(fp_calib)) {
     } else if (in_line[0] == '%') {
 /* Simply copy the input line to the output file if it is a comment: */
 /* Remove the end of line '\n' from input line: */
-      cleanup_string(in_line, 256);
+      jlp_cleanup_string(in_line, 256);
       fprintf(fp_out, "%s\n", in_line);
     } else {
       modify_LaTeX_header(in_line, fp_out);
@@ -222,7 +232,7 @@ char buffer[80];
 /* Copy input line to "compacted" form in order to perform the tests safely */
 strncpy(buffer, in_line,80);
 buffer[79]='\0';
-compact_string(buffer, 80);
+jlp_compact_string(buffer, 80);
 
 /* begin{tabular*} */
  if(!strncmp(buffer, "\\begin{tabular*}", 16)) {
@@ -242,7 +252,7 @@ compact_string(buffer, 80);
  } else {
 /* For the other lines, simply copy the input line to the output file: */
 /* Remove the end of line '\n' from input line: */
-  cleanup_string(in_line, 256);
+  jlp_cleanup_string(in_line, 256);
   fprintf(fp_out, "%s\n", in_line);
  }
 return(0);
@@ -254,7 +264,7 @@ return(0);
 static int remove_orbit_column(char *in_line, int ilen)
 {
 int verbose_if_error = 0;
-char *pc, buffer[256], notes[40];
+char *pc, buffer[256], notes[80];
 
 if(ilen > 256) {
   fprintf(stderr, "Fatal error: ilen=%d > 256! \n", ilen);
@@ -263,11 +273,12 @@ if(ilen > 256) {
 
 /* Get notes from column 12: */
 if(latex_get_column_item(in_line, notes, 12, verbose_if_error)){
-  fprintf(stderr, "Fatal error reading the notes: bad syntax of line=%s \n", in_line);
+  fprintf(stderr, "Fatal error reading the notes (in col. 12): bad syntax of line=%s \n", in_line);
+  fprintf(stderr, "Fatal error reading the notes (in col. 12): notes=%s< \n", notes);
   exit(-1);
  }
 /* Reduce length if full of ' ' ... */
-trim_string(notes, 40);
+jlp_trim_string(notes, 80);
 
 strcpy(buffer, in_line);
 /* Go to the end of Latex line (marked with "\\" or "\cr"): */

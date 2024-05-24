@@ -114,9 +114,8 @@ int check_consistency_ADSname(char *ADS_name, char *WDS_name,
                               int *is_OK)
 {
 char in_line[80], ADS_name0[20], WDS_name0[20], discov_name0[20];
-int iline, found;
+int i, iline, found;
 FILE *fp_ADS_WDS_cross;
-register int i;
 
 /* If ADS is absent from object name (i.e. only discoverer's name)
 * return from here:

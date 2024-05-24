@@ -34,8 +34,8 @@ int main(int argc, char *argv[])
 {
 char in_name[64], filter_name[20];
 double aa_mm, error_aa_mm, lambda[N_FILTERS], dlambda[N_FILTERS]; 
-double scale, sum, sumsq, mean_scale, error_scale;
-double rho, error_rho, theta_arcsec;
+double scale, sum, sumsq, mean_scale, error_scale, temperature;
+double rho, error_rho, theta_arcsec, delta_aa;
 char filt_name[N_FILTERS][20];
 FILE *fp_in;
 register int i;
@@ -70,30 +70,37 @@ strcpy(filt_name[5], "IR");
 */
 
 printf(" Program calib_rho to compute the scale \n");
-printf(" JLP Version 17-10-11 \n");
+printf(" JLP Version 12-05-2023 \n");
 
 /* One parameters only is allowed to run the program: */
 /* Carefull: 7 parameters always, using JLP "runs" */
 if(argc == 7 && *argv[3]) argc = 4;
 if(argc == 7 && *argv[2]) argc = 3;
 if(argc == 7 && *argv[1]) argc = 2;
-if(argc != 2 && argc != 1)
+if(argc != 3 && argc != 2 && argc != 1)
   {
-  printf(" Syntax: calib_rho in_file\n"); 
+  printf(" Syntax: calib_rho in_file temperature_deg_C \n"); 
   printf(" in_file: file with autocorrelation measurements\n");
   printf(" Fatal: Syntax error: argc=%d\n",argc);
   exit(-1);
   }
 
 /* Input of parameters with the command line: */
-if (argc == 2 )
+if (argc == 3 )
  { 
-  strcpy(in_name,argv[1]);
+  strcpy(in_name, argv[1]);
+  sscanf(argv[2], "%lf", &temperature);
+ }
+else if (argc == 2 )
+ { 
+  strcpy(in_name, argv[1]);
+  temperature = 20.;
  }
 /* Interactive input of parameters: */
 else
  { 
-  printf(" Input file := "); scanf("%s",in_name);
+  printf(" Input file := "); scanf("%s", in_name);
+  printf(" Temperature (deg. C):= "); scanf("%lf", &temperature);
  }
 
 if((fp_in = fopen(in_name, "r")) == NULL) {
@@ -101,6 +108,9 @@ if((fp_in = fopen(in_name, "r")) == NULL) {
  return(-1);
  }
 
+delta_aa = aa_mm * (temperature - 20) * 24.e-6;
+aa_mm += delta_aa;
+printf(" T=%.2f aa_mm=%.2f Delta=%.2f\n", temperature, aa_mm, delta_aa);
 sum = 0;
 sumsq = 0.;
 for(i = 0; i < N_FILTERS; i++) {

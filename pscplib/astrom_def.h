@@ -30,15 +30,16 @@ char comments[40][80]; 	/* Comments (lines starting with %) */
 char data[180];         /* Data: line with filename, filter, measurements */
 char filename[40];      /* Name of the FITS file used for this measurement */
 char date[12];          /* Date, e.g., 29/12/2004 */
-double epoch;            /* Julian day as a fraction of year, e;g., 2004.23 */
+double bessel_epoch;    /* BesselEpoch: Julian day as a fraction of year, e.g., 2004.232 */
+double julian_epoch;    /* JulianEpoch: as a fraction of year, e.g., 2004.232 */
 char filter[10];        /* Filter name: V, R, Sf */
 int eyepiece;           /* Focal length of the magnifying eyepiece */
 int is_new_double;      /* flag set to one if nd or ND in comments */
 int quadrant;           /* Quadrant value */
 int dquadrant;          /* Quadrant uncertainty (0 or 1) */
-double rho;              /* Angular separation of the binary (arcseconds) */
-double drho;             /* Error on rho (arcseconds) */
-double theta;            /* Position angle of the companion (relative to North)*/
+double rho;             /* Angular separation of the binary (arcseconds) */
+double drho;            /* Error on rho (arcseconds) */
+double theta;           /* Position angle of the companion (relative to North)*/
 double dtheta; 		/* Error on theta (degrees) */
 double dmag;            /* Delta mag */
 double ddmag;           /* Error on Delta mag */

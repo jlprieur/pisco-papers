@@ -86,7 +86,6 @@ int add_residuals_to_calib(FILE *fp_calib, char *resid_fname, FILE *fp_out,
 char in_line[256], wds_name[40]; 
 char object_name[40], discov_name[40], comp_name[40]; 
 char buffer[256], orbit_ref[60*50], quadrant_discrep[20]; 
-char previous_object_name[40], previous_comp_name[40];
 char sign_Drho[20], sign_Dtheta[20];
 double epoch_o, rho_o, rho_o_c[50], theta_o_c[50];
 int iline, norbits_found, status, verbose_if_error = 0, length1;
@@ -100,23 +99,15 @@ register int i;
       } else {
         irho = 6;
       }
-previous_object_name[0] = '\0';
-previous_comp_name[0] = '\0';
 iline = 0;
 while(!feof(fp_calib)) {
   if(fgets(in_line, 256, fp_calib)) {
     iline++;
 // Read header (assume 10 columns) and add 3 columns for output header
 // In gili'format: ADS col. is replaced by Dm col., but no filter, no orbit... 
-    if((gili_format == 1) && !strncmp(in_line,"& & & & & & & & & \\\\", 20)){
-      fprintf(fp_out,   "& & & & & & & & & & & & \\\\ \n");
-// In calern format: 10 => 13 cols, ADS and orb col. are removed  
-    } else if((gili_format != 1) && !strncmp(in_line,"& & & & & & & & & \\\\", 20)){
-      fprintf(fp_out,   "& & & & & & & & & & & & \\\\ \n");
 // Good lines start with a digit (WDS names...) or with \idem
 // Lines starting with % are ignored
-    } else if(in_line[0] != '%' && (isdigit(in_line[0]) 
-        || !strncmp(in_line, "\\idem", 5))) {
+    if((in_line[0] != '%') && (isdigit(in_line[0])) ) {
 // Remove the end of line '\n' from input line:
       jlp_cleanup_string(in_line, 256);
 
@@ -125,15 +116,13 @@ while(!feof(fp_calib)) {
 
 /* Retrieve the residuals for this object and epoch in the residual table: */
 /* Read object name and companion name from columns 2 and 3: */
-      if(isdigit(in_line[0])) {
-         read_object_name_from_CALIB_line_gili(in_line, wds_name, discov_name, 
+      read_object_name_from_CALIB_line_gili(in_line, wds_name, discov_name, 
                                                comp_name);
 /* Generate the object name: */
-          strcpy(object_name, discov_name);
-      } else {
-         strcpy(object_name, previous_object_name);
-         strcpy(comp_name, previous_comp_name);
-      }
+      strcpy(object_name, discov_name);
+#ifdef DEBUG
+      printf(" %s discov_name=%s \n", in_line, discov_name);
+#endif
 
 /* Read epoch in column 3: */
       status = latex_get_column_item(in_line, buffer, 3, verbose_if_error);
@@ -150,6 +139,9 @@ while(!feof(fp_calib)) {
          fprintf(stderr,"Warning: error reading rho_o: %s (line=%d) Unres ?\n", 
                  in_line, iline);
          }
+#ifdef DEBUG
+      printf(" object=%s comp=%s epoch=%.4f rho=%.4f \n", object_name, comp_name, epoch_o, rho_o);
+#endif
 
 /* Retrieve the residuals for this object and epoch in the residual table: */
       strcpy(quadrant_discrep,"");
@@ -181,8 +173,9 @@ while(!feof(fp_calib)) {
 // Truncate the line if too many columns:
         if(gili_format == 1)
            ncolumns = 10;
+// JLP 2023: same behaviour now:
         else
-           ncolumns = 9;
+           ncolumns = 10;
         status = latex_truncate_columns(in_line, buffer, ncolumns);
 
 /*
@@ -203,10 +196,6 @@ while(!feof(fp_calib)) {
       modify_LaTeX_header(in_line, fp_out, gili_format);
     }/* EOF if !isdigit ... */
   } /* EOF if fgets */ 
-/* Load object name to handle the case of "idem" (i.e. multiple measurements
-* of the same object, without repeating the object name in cols. 1 2 3)*/
- strcpy(previous_object_name, object_name);
- strcpy(previous_comp_name, comp_name);
  } /* EOF while ... */
 printf("add_residuals_to_calib: %d lines sucessfully read and processed\n", 
         iline);

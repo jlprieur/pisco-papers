@@ -10,6 +10,7 @@
 *************************************************************************/
 #include "jlp_catalog_utils.h"
 #include "jlp_string.h" // in jpllib/jlp_fits jlp_cleanup
+#include "latex_utils.h" // get_column_item() 
 
 #define DEBUG
 #define DEBUG_1
@@ -80,10 +81,9 @@ static int modif_resid1(FILE *fp_resid, FILE *fp_out)
 char in_line[256], in_line2[256], in_line3[256]; 
 char object_name[40], ads_name[40], discov_name[40], comp_name[40]; 
 char buffer[256], companion[64], *pc;
-int ads_nber;
+int i, ads_nber;
 int iline, norbits_found, status, verbose_if_error = 0;
 int ref_slength = 60, nmax_orbits = 50;
-register int i;
 
 iline = 0;
 while(!feof(fp_resid)) {
@@ -239,7 +239,7 @@ if(latex_get_column_item(in_line, notes, 12, verbose_if_error)){
   exit(-1);
  }
 /* Reduce length if full of ' ' ... */
-trim_string(notes, 40);
+jlp_trim_string(notes, 40);
 
 strcpy(buffer, in_line);
 /* Go to the end of Latex line (marked with "\\" or "\cr"): */

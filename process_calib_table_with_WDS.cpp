@@ -10,6 +10,7 @@
 *   Ex: iop=2,m1V,k7V will generate the table with the white darfs  
 * - iopt=3, check the presence of AB components in the WDS catalog 
 * - iopt=4, look for names of double stars that are not in the WDS catalog 
+* - iopt=5, compare Dm measurements with WDS Delta mag
 *
 * JLP 
 * Version 10/05/2021
@@ -26,8 +27,8 @@
 #include "tex_calib_utils.h"  // extract_companion_from_name()
 #include "astrom_utils1.h" // astrom_read_object_data_for_name_only()
 
-#define DEBUG
 /*
+#define DEBUG
 #define DEBUG1
 */
 
@@ -52,6 +53,8 @@ static int count_all_objects(char *in_fname);
 static int add_wds_meas_to_table1(char *in_fname, char *out_fname, 
                                   char *wds_cat_fname, double delta_rho_rho_max,
                                   double delta_theta_max);
+static int remove_Dm_measures(char *in_fname, char *out_fname, 
+                             char *wds_cat_fname, double Dm_error_maxi);
 static int extract_white_dwarfs_from__table1(char *in_fname, char *out_fname,
                                              char *wds_cat_fname, char *sp_mini,
                                              char *sp_maxi);
@@ -68,6 +71,90 @@ static int check_if_known_objects(char *in_fname, char *out_fname,
                                   char *wds_cat_fname);
 
 static int jlp_clean_dollars(char *str0, int str_len0);
+
+
+/***********************************************************************
+*
+* - iopt=1,delta_rho_rho_max,delta_theta_max generate table with the latest WDS (rho,theta) 
+*   measurements and comparison in the last columns, with delta_rho_rho,dtheta thresholds
+*   for output 
+* - iopt=2,spmin,spmax generate table with all the WDS spectroscopic 
+*   classification in the last column, ans spmin,spmax for output 
+*   Ex: iop=2,m1V,k7V will generate the table with the white darfs  
+* - iopt=3, check the presence of AB components in the WDS catalog 
+*   and in the input latex file
+* - iopt=4, look for names of double stars that are not in the WDS catalog 
+************************************************************************/
+int main(int argc, char *argv[])
+{
+char in_fname[128], out_fname[128], wds_cat_fname[128];
+char sp_mini[64], sp_maxi[64];
+double delta_rho_rho_max, delta_theta_max, Dm_error_maxi;
+int iopt, resid_only;
+
+if(argc != 5) {
+  printf("Syntax:\n"); 
+  printf("Option1: add latest rho,theta WDS meas. and comp. in the last cols. \n");
+  printf(" 1,delta_rho_rho_max,delta_theta_max for output \n");
+  printf("process_calib_table_with_WDS in_table out_table wds_catalog 1,0.2,20.\n");
+  printf("Option2: look for classification \n");
+  printf(" 2,sp_mini,sp_maxi \n");
+  printf("process_calib_table_with_WDS in_table out_table wds_catalog 2,0.2,20.\n");
+  return(-1);
+}
+strcpy(in_fname, argv[1]);
+strcpy(out_fname, argv[2]);
+strcpy(wds_cat_fname, argv[3]);
+sscanf(argv[4], "%d", &iopt);
+if(iopt == 1)
+   sscanf(argv[4], "%d,%lf,%lf", &iopt, &delta_rho_rho_max, &delta_theta_max);
+else if(iopt == 2)
+   sscanf(argv[4], "%d,%s,%s", &iopt, &sp_mini, &sp_maxi);
+else if(iopt == 3)
+   sscanf(argv[4], "%d", &iopt);
+else if(iopt == 5)
+   sscanf(argv[4], "%d,%lf", &iopt, &Dm_error_maxi);
+
+printf("OK: in_table=%s output=%s wds_cat=%s\n", 
+        in_fname, out_fname, wds_cat_fname); 
+if(iopt == 1) {
+  printf("OK: iopt=%d delta_rho_rho_max=%f delta_theta_max=%f\n", 
+         iopt, delta_rho_rho_max, delta_theta_max); 
+} else if(iopt == 2) { 
+  printf("OK: iopt=%d sp_mini=%s sp_maxi=%s\n", 
+         iopt, sp_mini, sp_maxi); 
+} else if(iopt == 5) { 
+  printf("OK: iopt=%d Dm_error_maxi=%f\n", 
+         iopt, Dm_error_maxi); 
+} else { 
+  printf("OK: iopt=%d\n", 
+         iopt); 
+}
+
+//count_all_objects(in_fname);
+switch(iopt) {
+  case 1:
+  default:
+     add_wds_meas_to_table1(in_fname, out_fname, wds_cat_fname, 
+                            delta_rho_rho_max, delta_theta_max); 
+     break;
+  case 2:
+     extract_white_dwarfs_from__table1(in_fname, out_fname, wds_cat_fname,
+                                       sp_mini, sp_maxi);
+     break;
+  case 3:
+     check_AB_components(in_fname, out_fname, wds_cat_fname);
+     break;
+  case 4:
+     check_if_known_objects(in_fname, out_fname, wds_cat_fname);
+     break;
+  case 5:
+     remove_Dm_measures(in_fname, out_fname, wds_cat_fname, Dm_error_maxi);
+     break;
+  }
+
+return(0);
+}
 /*************************************************************************
 *
 *************************************************************************/
@@ -138,81 +225,6 @@ printf("%s wds_name=%s discov_name=%s rho=%f drho=%f theta=%f dtheta=%f\n",
        psc0.theta_meas, psc0.dtheta_meas);
 return(0);
 }
-
-
-/***********************************************************************
-*
-* - iopt=1,delta_rho_rho_max,delta_theta_max generate table with the latest WDS (rho,theta) 
-*   measurements and comparison in the last columns, with delta_rho_rho,dtheta thresholds
-*   for output 
-* - iopt=2,spmin,spmax generate table with all the WDS spectroscopic 
-*   classification in the last column, ans spmin,spmax for output 
-*   Ex: iop=2,m1V,k7V will generate the table with the white darfs  
-* - iopt=3, check the presence of AB components in the WDS catalog 
-*   and in the input latex file
-* - iopt=4, look for names of double stars that are not in the WDS catalog 
-************************************************************************/
-int main(int argc, char *argv[])
-{
-char in_fname[128], out_fname[128], wds_cat_fname[128];
-char sp_mini[64], sp_maxi[64];
-double delta_rho_rho_max, delta_theta_max;
-int iopt, resid_only;
-
-if(argc != 5) {
-  printf("Syntax:\n"); 
-  printf("Option1: add latest rho,theta WDS meas. and comp. in the last cols. \n");
-  printf(" 1,delta_rho_rho_max,delta_theta_max for output \n");
-  printf("process_calib_table_with_WDS in_table out_table wds_catalog 1,0.2,20.\n");
-  printf("Option2: look for classification \n");
-  printf(" 2,sp_mini,sp_maxi \n");
-  printf("process_calib_table_with_WDS in_table out_table wds_catalog 2,0.2,20.\n");
-  return(-1);
-}
-strcpy(in_fname, argv[1]);
-strcpy(out_fname, argv[2]);
-strcpy(wds_cat_fname, argv[3]);
-sscanf(argv[4], "%d", &iopt);
-if(iopt == 1)
-   sscanf(argv[4], "%d,%lf,%lf", &iopt, &delta_rho_rho_max, &delta_theta_max);
-else if(iopt == 2)
-   sscanf(argv[4], "%d,%s,%s", &iopt, &sp_mini, &sp_maxi);
-else if(iopt == 3)
-   sscanf(argv[4], "%d", &iopt);
-
-printf("OK: in_table=%s output=%s wds_cat=%s\n", 
-        in_fname, out_fname, wds_cat_fname); 
-if(iopt == 1) {
-  printf("OK: iopt=%d delta_rho_rho_max=%f delta_theta_max=%f\n", 
-         iopt, delta_rho_rho_max, delta_theta_max); 
-} else if(iopt == 2) { 
-  printf("OK: iopt=%d sp_mini=%s sp_maxi=%s\n", 
-         iopt, sp_mini, sp_maxi); 
-} else { 
-  printf("OK: iopt=%d\n", 
-         iopt); 
-}
-
-count_all_objects(in_fname);
-switch(iopt) {
-  case 1:
-  default:
-     add_wds_meas_to_table1(in_fname, out_fname, wds_cat_fname, 
-                            delta_rho_rho_max, delta_theta_max); 
-     break;
-  case 2:
-     extract_white_dwarfs_from__table1(in_fname, out_fname, wds_cat_fname,
-                                       sp_mini, sp_maxi);
-     break;
-  case 3:
-     check_AB_components(in_fname, out_fname, wds_cat_fname);
-     break;
-  case 4:
-     check_if_known_objects(in_fname, out_fname, wds_cat_fname);
-     break;
-  }
-return(0);
-}
 /************************************************************************
 * Scan the input table and make the modifications 
 * - count de number of objects, the number of observations
@@ -224,7 +236,7 @@ return(0);
 static int count_all_objects(char *in_fname)
 {
 char in_line[256], in_line2[256], in_line3[256]; 
-char discov_name[40], wds_name[40], label[64], old_discov_name[40]; 
+char discov_name[40], wds_name[40], old_discov_name[40]; 
 char buffer[256], rho_meas[40], theta_meas[40], orbit_ref[40], *pc;
 int iline, status, verbose_if_error = 0, nobj, nmeas, nunres, nresid, ndmag;
 int nlines_meas, nquad;
@@ -382,7 +394,7 @@ static int add_wds_meas_to_table1(char *in_fname, char *out_fname,
                                   double delta_theta_max) 
 {
 char in_line[256], in_line2[256], in_line3[256]; 
-char full_discov_name[64], discov_name[64], wds_name[64], label[64]; 
+char full_discov_name[64], discov_name[64], wds_name[64]; 
 char buffer[256], rho_meas[64], theta_meas[64], *pc;
 char comp_name[64], spectral_type[64], wds_name_from_WDS_catalog[64]; 
 double WdsLastYear, WdsLastTheta, WdsLastRho, mag_A, mag_B;
@@ -508,7 +520,7 @@ printf("%s = %s%s WY=%.2f WR=%.2f WT=%.1f \n",
 
       if(((delta_rho_rho != 12345.) && (ABS(delta_rho_rho) > delta_rho_rho_max)) 
 // I add this to avoid too many output unuseful lines :
-       && ((rho_val > 0.2) && (WdsLastRho > 0.2))
+       && ((rho_val > 0.2) || (WdsLastRho > 0.2))
        || ((delta_theta != 12345.) && (ABS(delta_theta) > delta_theta_max))){ 
           printf("\nFrom calib table: %s %s %s rho=%.3f theta=%.1f\n",
           discov_name, comp_name, wds_name, rho_val, theta_val);
@@ -544,6 +556,183 @@ fclose(fp_out);
 return(0);
 }
 /************************************************************************
+* Scan the calib file and add various parameters
+* add WDS rho, theta measurements and extract objects for which the
+* difference between maesurements and WDS measurements 
+* are smaller than (delta_rho_rho_max, delta_theta_max)
+*
+* From WDS catalog, retrieve:
+* WDS number,
+* WY, WT, WR (year, theta and rho of the last observation)
+*
+* INPUT:
+* in_fname: input table filename
+* out_fname: output Latex filename
+* wds_cat_fname: WDS catalog filename
+*  e.g., wdsweb_summ.txt (used to obtain the last WDS observations)
+*
+*************************************************************************/
+static int remove_Dm_measures(char *in_fname, char *out_fname, 
+                             char *wds_cat_fname, double Dm_error_maxi)
+{
+char in_line[256]; 
+char full_discov_name[64], discov_name[64], wds_name[64]; 
+char buffer[256], Dm_meas[64], *pc;
+char comp_name[64], spectral_type[64], wds_name_from_WDS_catalog[64]; 
+double WdsLastYear, WdsLastTheta, WdsLastRho, mag_A, mag_B, Delta_mag_WDS;
+int iline, status, wds_meas_found, verbose_if_error = 0;
+double Dm_val, dval, error_Dm, sum_error, sumsq_error, mean_error;
+int i, n_meas, n_errors, n_removed;
+FILE *fp_in, *fp_out;
+time_t ttime = time(NULL);
+
+/* Open input table: */
+if((fp_in = fopen(in_fname, "r")) == NULL) {
+ fprintf(stderr, "add_wds_meas_to_table1/Fatal error opening input table %s\n",
+         in_fname);
+ return(-1);
+ }
+
+/* Open output table: */
+if((fp_out = fopen(out_fname, "w")) == NULL) {
+ fprintf(stderr, "add_wds_meas_to_table1/Fatal error opening output file: %s\n",
+         out_fname);
+ return(-1);
+ }
+
+/* Header of the output Latex table: */
+fprintf(fp_out, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
+fprintf(fp_out, "Routine add_wds_meas_to_table1 using %s\n", wds_cat_fname);
+fprintf(fp_out, "%% Table of objects from %s with delta_Dm_error smaller than %f\n%% Created on %s", 
+        in_fname, Dm_error_maxi, ctime(&ttime));
+fprintf(fp_out, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
+
+iline = 0;
+n_meas = 0;
+n_removed = 0;
+sum_error = 0.;
+sumsq_error = 0.;
+n_errors = 0.;
+while(!feof(fp_in)) {
+  if(fgets(in_line, 256, fp_in)) {
+    iline++;
+// Remove all the non-printable characters and the end of line '\n' 
+// from input line:
+    jlp_cleanup_string(in_line, 256);
+
+// Good lines start with a digit (WDS names...)
+// Lines starting with % are ignored
+    if(isdigit(in_line[0])) { 
+#ifdef DEBUG
+      printf("in_line=%s\n", in_line);
+#endif
+/* Get wds_name from column 1: */
+     latex_get_column_item(in_line, wds_name, 1, verbose_if_error);
+     jlp_compact_string(wds_name, 40);
+/* Get discov_name from column 2: */
+     latex_get_column_item(in_line, full_discov_name, 2, verbose_if_error);
+
+// Split discov_name and comp_name:
+      jlp_split_discov_comp(full_discov_name, 64, discov_name, comp_name);
+
+/* Remove the extra-blanks: */
+     jlp_trim_string(discov_name, 64);
+     jlp_trim_string(comp_name, 64);
+
+#ifdef DEBUG
+printf("From calib table: discov_name=%s< comp_name=%s< wds_name=>%s< \n",
+       discov_name, comp_name, wds_name);
+#endif
+// Change some companion names:
+  if(!strcmp(comp_name, "ab")) strcpy(comp_name, "AB");
+  if(!strcmp(comp_name, "bc")) strcpy(comp_name, "BC");
+  if(!strcmp(comp_name, "cd")) strcpy(comp_name, "CD");
+  if(!strcmp(comp_name, "ac")) strcpy(comp_name, "AC");
+  if(!strcmp(comp_name, "ab-c")) strcpy(comp_name, "AB-C");
+
+/*
+* Get miscellaneous data from the WDS catalog from discov_name and comp_name
+int get_data_from_WDS_catalog(char *WDS_catalog, char *discov_name,
+                              char *comp_name, char *wds_name_from_WDS_catalog,
+                              double *WdsLastYear,
+                              double *WdsLastRho, double *WdsLastTheta,
+                              double *WdsMagA, double *WdsMagB,
+                              char *WdsSpectralType,
+                              int *wds_meas_found);
+*/
+     get_data_from_WDS_catalog(wds_cat_fname, discov_name, comp_name, 
+                               wds_name_from_WDS_catalog,
+                               &WdsLastYear, &WdsLastRho, &WdsLastTheta,
+                               &mag_A, &mag_B, spectral_type,
+                               &wds_meas_found);
+#ifdef DEBUG
+printf("get_data_from_WDS catalog: wds_name_from_WDS_catalog=>%s< \n",
+        wds_name_from_WDS_catalog);
+printf("%s = %s%s mag_A=%.1f mag_B=%.1f\n",
+       wds_name, discov_name, comp_name, mag_A, mag_B);
+#endif
+
+
+/* Get Dm measure from column 9: */
+    Dm_val = 12345.;
+      verbose_if_error = 0;
+
+      if(latex_get_column_item(in_line, Dm_meas, 9, verbose_if_error) == 0){
+        if(sscanf(Dm_meas, "%lf", &dval) == 1) {
+          Dm_val = dval;
+          }
+      }
+    if(wds_meas_found == 1) {
+       Delta_mag_WDS = ABS(mag_B - mag_A);
+       error_Dm = Dm_val - Delta_mag_WDS;
+    } else {
+       error_Dm = 0.;
+    } // EOF if wds_meas_found == 1
+
+    if(Dm_val != 12345.) {
+       n_meas++; 
+       if(ABS(error_Dm) > Dm_error_maxi) 
+         { 
+          printf("\nFrom calib table: %s %s %s Dm=%.3f Delta_mag_WDS=%.3f error_Dm=%.3f (> max=%.3f)\n",
+                 discov_name, comp_name, wds_name, Dm_val, Delta_mag_WDS, 
+                 ABS(error_Dm), Dm_error_maxi);
+          printf("From WDS catalog: wds=>%s< mag_A=%.2f mag_B=%.2f\n",
+                  wds_name_from_WDS_catalog, mag_A, mag_B);
+/*
+int latex_set_column_item(char *in_line, int in_line_length, char *new_item, 
+                          int new_item_len, int icol, int verbose_if_error);
+*/
+         strcpy(buffer, " ");
+         latex_set_column_item(in_line, 256, buffer, 256, 9, verbose_if_error);
+         n_removed++;
+// EOF error_Dm != 12345 && > Dm_error_maxi
+        } else {
+         n_errors ++;
+         sum_error += error_Dm;
+         sumsq_error += error_Dm * error_Dm;
+        }
+      } // if(Dm_val != 12345.)
+
+    }/* EOF if !isdigit % ... */
+// Save to output file:
+    fprintf(fp_out, "%s\n", in_line); 
+
+  } /* EOF if fgets */ 
+ } /* EOF while ... */
+mean_error = sum_error / (double)n_errors;
+printf("process_table1: %d lines sucessfully read and processed (n_meas=%d n_removed=%d n_errors=%d, mean=%.3f sigma=%.3f)\n", 
+        iline, n_meas, n_removed, n_errors, mean_error, sqrt(sumsq_error/(double)n_errors - (mean_error * mean_error)));
+
+/* Close opened files:
+*/
+fclose(fp_in);
+fclose(fp_out);
+
+return(0);
+}
+/************************************************************************
 * Scan the calib file and check the consistency of AB components 
 *
 * From WDS catalog, retrieve:
@@ -560,7 +749,7 @@ static int check_AB_components(char *in_fname, char *out_fname,
                                char *wds_cat_fname)
 {
 char in_line[256], in_line2[256], in_line3[256]; 
-char full_discov_name[64], discov_name[64], wds_name[64], label[64]; 
+char full_discov_name[64], discov_name[64], wds_name[64]; 
 char buffer[256], *pc, wds_discov_name[64], wds_comp_name[64];
 char comp_name[64], wds_name_from_WDS_catalog[64]; 
 int iline, status, verbose_if_error = 0;
@@ -678,7 +867,7 @@ static int check_if_known_objects(char *in_fname, char *out_fname,
                                char *wds_cat_fname)
 {
 char in_line[256], in_line2[256], in_line3[256]; 
-char full_discov_name[64], discov_name[64], wds_name[64], label[64]; 
+char full_discov_name[64], discov_name[64], wds_name[64]; 
 char buffer[256], *pc, wds_discov_name[64], wds_comp_name[64];
 char comp_name[64], wds_name_from_WDS_catalog[64]; 
 int iline, status, verbose_if_error = 0;
@@ -799,7 +988,7 @@ static int extract_white_dwarfs_from__table1(char *in_fname, char *out_fname,
                                              char *sp_maxi)
 {
 char in_line[256], buffer[256]; 
-char discov_name[40], wds_name[40], label[64]; 
+char discov_name[40], wds_name[40]; 
 int iline, status, verbose_if_error = 0;
 int i, is_new_double;
 

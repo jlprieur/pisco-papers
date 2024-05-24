@@ -20,6 +20,7 @@ int get_data_from_WDS_catalog(char *WDS_catalog, char *discov_name,
                               char *WdsSpectralType,
                               int *found);
 int read_coordinates_from_WDS_catalog(char *WDS_name, char *WDS_catalog, 
+                                      char *str_alpha, char *str_delta,
                                       double *alpha, double *delta,
                                       double *equinox, int *found);
 int get_data_from_WDS_and_HIP_catalogs(char *WDS_catalog, 

@@ -16,9 +16,9 @@
 
 #include "csv_utils.h" // prototypes defined here
 /*
+#define DEBUG
 #define DEBUG1
 */
-#define DEBUG
 /*****************************************************************************
 * Read the measurements from the input line from Gili's csv file 
 * Example:
@@ -150,7 +150,7 @@ if(status == 0) strcpy((obj1[*nobj1]).notes, notes1);
 
 // Decode the epoch from the notes::
 status = csv_read_epoch_from_notes(b_data, i_notes, &epoch1);
-if(status == 0) me->epoch = epoch1;
+if(status == 0) me->bessel_epoch = epoch1;
 #ifdef DEBUG1
 printf("out: epoch1=%f status=%d \n", epoch1, status);
 #endif
@@ -294,86 +294,6 @@ if(out_string[0] != '\0') status = 0;
 
 return(status);
 }
-/*************************************************************
-* Read a string from the input line 
-*************************************************************/
-int csv_read_string(char *b_data, int i_column, char *out_string)
-{
-char buffer[256], buf1[256], *pc;
-int icol, iquote, status = -1;
-
-/* DEBUG
-printf("i_column=%d\n", i_column);
-printf("b_data: >%s<\n", b_data);
-*/
-
-strcpy(buf1, b_data);
-pc = buf1;
-// Go to the wright column:
-icol = 1;
-iquote = 0;
- while(*pc) {
-   if(*pc == '"') if(iquote == 0) iquote = 1; else iquote = 0; 
-   if((iquote == 0) && (*pc == ',')) icol++; 
-   pc++;
-   if(i_column == icol) break;
-   }
-strcpy(buffer, pc);
-
-// Decode string: stop at ','
-pc = buffer;
-iquote = 0;
- while(*pc) {
-   if(*pc == '"') if(iquote == 0) iquote = 1; else iquote = 0; 
-   if((iquote == 0) && (*pc == ',')) {
-      *pc = '\0'; 
-      break;
-      }
-   pc++;
-  }
- if(*pc == ',') *pc = '\0';
-
-strncpy(out_string, buffer, 64);
-if(out_string[0] != '\0') status = 0;
-
-#ifdef DEBUG1
-printf("csv_read_string/out_string: >%s<\n", out_string);
-#endif
-
-return(status);
-}
-/*************************************************************
-* Read a double value from the input line 
-*************************************************************/
-int csv_read_dvalue(char *b_data, int i_column, double *dvalue)
-{
-char buffer[64], *pc, out_string[64];
-int nval, status = -1;
-
-status = csv_read_string(b_data, i_column, out_string);
-
-// Removes the quotes at the beginning if any: 
- if(out_string[0] == '"') strcpy(buffer, &out_string[1]);
-   else strcpy(buffer, out_string);
-
- pc = buffer;
- while(*pc && (*pc != '"') ) 
-    {
-    if(*pc == ',') *pc = '.';
-    pc++;
-    }
- *pc = '\0';
-
-nval = sscanf(buffer, "%lf", dvalue);
-if(nval == 1) status = 0;
- else status = -1;
-
-#ifdef DEBUG1
-printf("dvalue=%f status=%d\n", *dvalue, status);
-#endif
-
-return(status);
-}
 /*****************************************************************************
 * Read the measurements and object parameters from the input tex calib file 
 *
@@ -437,4 +357,201 @@ printf("csv_read_gili_measures/Number of lines: nlines=%d nobj=%d\n", iline, *no
 
 fclose(fp_in);
 return(0);
+}
+/*************************************************************
+* Read a string from the input line 
+*************************************************************/
+int csv_read_string(char *b_data, int i_column, char *out_string)
+{
+char buffer[256], buf1[256], *pc, *pc0;
+int icol, iquote, status = -1, ilen1;
+
+/* DEBUG
+printf("i_column=%d\n", i_column);
+printf("b_data: >%s<\n", b_data);
+*/
+
+strcpy(buf1, b_data);
+pc = buf1;
+pc0 = pc;
+// Go to the wright column:
+icol = 0;
+iquote = 0;
+ while(*pc) {
+   if(*pc == '"') {
+     if(iquote == 0) iquote = 1; else iquote = 0; 
+   }
+// 
+   if((iquote == 0) && (*pc == ',')) {
+     icol++; 
+     if(i_column == icol) {
+       break;
+       } else {
+       pc0 = pc + 1;
+       }
+     }
+   pc++;
+   }
+strcpy(buffer, pc0);
+/* DEBUG
+printf("csv_read_string/buffer: >%s<\n", buffer);
+*/
+
+// Decode string: stop at ','
+iquote = 0;
+pc = buffer;
+ while(*pc) {
+   if(*pc == '"') {
+     if(iquote == 0) iquote = 1; else iquote = 0; 
+   }
+   if((iquote == 0) && (*pc == ',')) {
+       *pc = '\0'; 
+       break;
+     }
+   pc++;
+  }
+
+// Remove first and last ":
+if(buffer[0] == '"') buffer[0] = ' ';
+ilen1 = strlen(buffer);
+if(buffer[ilen1 - 1] == '"') buffer[ilen1 - 1] = ' ';
+
+strncpy(out_string, buffer, 64);
+if(out_string[0] != '\0') status = 0;
+
+#ifdef DEBUG
+printf("csv_read_string/out_string: >%s<\n", out_string);
+#endif
+
+return(status);
+}
+/*************************************************************
+* Read a double value from the input line 
+*************************************************************/
+int csv_read_dvalue(char *b_data, int i_column, double *dvalue)
+{
+char buffer[64], *pc, out_string[64];
+int nval, status = -1;
+
+*dvalue = -1000000.;
+status = csv_read_string(b_data, i_column, out_string);
+if(status != 0) return(status);
+
+// Removes the quotes at the beginning if any: 
+ if(out_string[0] == '"') strcpy(buffer, &out_string[1]);
+   else strcpy(buffer, out_string);
+
+ pc = buffer;
+ while(*pc && (*pc != '"') ) 
+    {
+// Change the French number separator to the English one:
+    if(*pc == ',') *pc = '.';
+    pc++;
+    }
+ *pc = '\0';
+
+nval = sscanf(buffer, "%lf", dvalue);
+if(nval == 1) status = 0;
+ else status = -1;
+
+#ifdef DEBUG1
+printf("dvalue=%f status=%d\n", *dvalue, status);
+#endif
+
+return(status);
+}
+/*************************************************************
+* Read a string from the input line 
+*************************************************************/
+int blank_read_string(char *b_data, int i_column, char *out_string)
+{
+char buffer[256], buf1[256], *pc, *pc0;
+int icol, iquote, status = -1;
+
+/* DEBUG
+printf("i_column=%d\n", i_column);
+printf("b_data: >%s<\n", b_data);
+*/
+
+strcpy(buf1, b_data);
+pc = buf1;
+pc0 = pc;
+// Go to the wright column:
+icol = 0;
+iquote = 0;
+ while(*pc) {
+   if(*pc == '"') {
+     if(iquote == 0) iquote = 1; else iquote = 0; 
+   }
+// 
+   if((iquote == 0) && (*pc == ' ')) {
+     icol++; 
+     if(i_column == icol) {
+       break;
+       } else {
+       pc0 = pc + 1;
+       }
+     }
+// Remove successive blanks
+   while(*pc == ' ') pc++; 
+   pc++;
+   }
+strcpy(buffer, pc0);
+/* DEBUG
+printf("blank_read_string/buffer: >%s<\n", buffer);
+*/
+
+// Decode string: stop at ','
+pc = buffer;
+ while(*pc) {
+   if(*pc == ',') {
+      *pc = '\0'; 
+      break;
+      }
+   pc++;
+  }
+
+strncpy(out_string, buffer, 64);
+if(out_string[0] != '\0') status = 0;
+
+#ifdef DEBUG
+printf("blank_read_string/out_string: >%s<\n", out_string);
+#endif
+
+return(status);
+}
+/*************************************************************
+* Read a double value from the input line 
+*************************************************************/
+int blank_read_dvalue(char *b_data, int i_column, double *dvalue)
+{
+char buffer[64], *pc, out_string[64];
+int nval, status = -1;
+
+*dvalue = -1000000.;
+status = blank_read_string(b_data, i_column, out_string);
+if(status != 0) return(status);
+
+// Removes the quotes at the beginning if any: 
+ if(out_string[0] == '"') strcpy(buffer, &out_string[1]);
+   else strcpy(buffer, out_string);
+
+ pc = buffer;
+ while(*pc && (*pc != '"') ) 
+    {
+// Change the French number separator to the English one:
+    if(*pc == ',') *pc = '.';
+    pc++;
+    }
+ *pc = '\0';
+
+nval = sscanf(buffer, "%lf", dvalue);
+if(nval == 1) status = 0;
+ else status = -1;
+
+#ifdef DEBUG1
+printf("dvalue=%f status=%d\n", *dvalue, status);
+#endif
+
+return(status);
 }

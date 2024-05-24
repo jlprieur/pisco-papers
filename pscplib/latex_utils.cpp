@@ -184,7 +184,7 @@ int latex_write_dvalue(char *b_data, char *b_out, double value, int icol,
 {
 int ic, column_is_found, istart, iend;
 char data[360], *pc;
-register int i;
+int i;
 
 strcpy(data, b_data);
 

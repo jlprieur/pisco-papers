@@ -40,6 +40,7 @@ int get_data_from_WDS_catalog(char *WDS_catalog, char *discov_name,
                               char *WdsSpectralType,
                               int *found);
 int read_coordinates_from_WDS_catalog(char *wds_name, char *WDS_catalog, 
+                                      char *str_alpha, char *str_delta,
                                       double *alpha, double *delta,
                                       double *equinox, int *found);
 */
@@ -129,17 +130,20 @@ while(!feof(fp_WDS_cat) && (*found != 1)) {
    if(!strcmp(comp_name, comp_name0)) same_comp = 1; 
    if((comp_name[0] == '\0') && !strcmp(comp_name0, "AB")) same_comp = 1; 
    if((comp_name0[0] == '\0') && !strcmp(comp_name, "AB")) same_comp = 1; 
-   if(!strcmp(discov_name, discov_name0) && (same_comp == 1)) {
+   if(!strcmp(discov_name, discov_name0)) {
      strcpy(wds_name, wds_name0);
      strcpy(wds_discov_name, discov_name0);
      strcpy(wds_comp_name, comp_name0);
      *found = 1;
+   if(same_comp == 1) {
+     *found = 2;
+     break;
+     }
 #ifdef DEBUG_1
      printf("search_discov_name_in_WDS_catalog/Object found (discov_name=%s< comp_name=%s<) found=%d", 
              discov_name, comp_name,  *found);
      printf(" WDS=%s discov0=%s< comp0=%s<\n", wds_name0, discov_name0, comp_name0);
 #endif
-     break;
      }
    } /* EOF cat_line[0] != '%' */
   } /* EOF fgets... */
@@ -169,8 +173,7 @@ int get_data_from_WDS_catalog(char *WDS_catalog, char *discov_name1,
                               char *wds_name, double *WdsLastYear, 
                               double *WdsLastRho, double *WdsLastTheta, 
                               double *WdsMagA, double *WdsMagB,
-                              char *WdsSpectralType,
-                              int *wds_meas_found)
+                              char *WdsSpectralType, int *wds_meas_found)
 {
 FILE *fp_WDS_cat;
 char cat_line0[256], discov_name0[20], comp_name0[20], wds_name0[20];
@@ -178,7 +181,6 @@ char cvalue[64], notes0[64], orbit0, *pc, full_discov_name[64];
 char full_discov_name0[64];
 double dvalue;
 int iline, ivalue;
-
 
 // Copy input discov_name and comp name: 
 // Handle case of AB companion 
@@ -353,6 +355,7 @@ Columns 113-130:    The hours, minutes, seconds and tenths of seconds (when
 *            (alpha in hours and delta in degrees)
 ************************************************************************/
 int read_coordinates_from_WDS_catalog(char *wds_name, char *WDS_catalog, 
+                                      char *str_alpha, char *str_delta,
                                       double *alpha, double *delta,
                                       double *equinox, int *found)
 {
@@ -400,8 +403,11 @@ while(!feof(fp_WDS_cat)) {
 Example:
 060156.93+605244.8 in 113-130
 */
-/* (last) year */
      strncpy(cvalue, &cat_line0[112], 18);
+     strncpy(str_alpha, &cat_line0[112], 9);
+     str_alpha[9] = '\0';
+     strncpy(str_delta, &cat_line0[121], 9);
+     str_delta[9] = '\0';
      cvalue[18] = '\0';
      if(sscanf(cvalue, "%02d%02d%02d.%02d%c%02d%02d%02d.%d", 
         &hh, &hm, &hs, &hss, sign, &dd, &dm, &ds, &dss) == 9) {
@@ -461,7 +467,7 @@ int get_data_from_WDS_and_HIP_catalogs(char *WDS_catalog,
                                        int *found_in_Hip_cat)
 {
 char WDS_name[40], HIP_name[40], CCDM_name[40];
-char *pc, buffer[128];
+char *pc, buffer[128], str_alpha[64], str_delta[64];
 double alpha_wds, delta_wds, equinox_wds, D_tolerance;
 double WdsLastYear, WdsLastRho, WdsLastTheta;
 int found, is_OK, status;
@@ -484,7 +490,8 @@ get_data_from_WDS_catalog(WDS_catalog, discov_name, comp_name,
                           spectral_type, found_in_WDS);
 
 if(*found_in_WDS != 0) {
- read_coordinates_from_WDS_catalog(wds_name, WDS_catalog, &alpha_wds, 
+ read_coordinates_from_WDS_catalog(wds_name, WDS_catalog, str_alpha,
+                                   str_delta, &alpha_wds, 
                                    &delta_wds, &equinox_wds, &found);
  if(found != 1) {
    fprintf(stderr, "get_data_from_WDS_and_HIP_catalogs/Error: coorrds. of %s not found\n",

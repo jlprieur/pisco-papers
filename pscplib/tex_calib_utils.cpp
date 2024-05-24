@@ -69,7 +69,7 @@ int tex_calib_read_measures_from_line(char *b_data, OBJECT *obj1,
 int i_WDSName, i_ObjectName, i_eyepiece, i_filter; 
 int i_epoch, i_rho, i_drho, i_theta, i_dtheta, i_dmag;
 int status = -1, iverbose = 0;
-double epoch1, rho1, drho1, theta1, dtheta1, dmag1, ddmag1, ww;
+double BesselEpoch1, rho1, drho1, theta1, dtheta1, dmag1, ddmag1, ww;
 int eyepiece1, quadrant1, dquadrant1;
 char WDSName1[64], ObjectName1[64], filter1[32], notes1[64];
 MEASURE *me;
@@ -81,7 +81,7 @@ if(isdigit(b_data[0]) == 0) {
 eyepiece1 = 0;
 quadrant1 = 0;
 dquadrant1 = 0;
-epoch1 = NO_DATA;
+BesselEpoch1 = NO_DATA;
 rho1 = NO_DATA;
 drho1 = NO_DATA;
 theta1 = NO_DATA;
@@ -127,7 +127,7 @@ me->rho = NO_DATA;
 me->drho = NO_DATA;
 me->theta = NO_DATA;
 me->dtheta = NO_DATA;
-me->epoch = NO_DATA;
+me->bessel_epoch = NO_DATA;
 me->dmag = NO_DATA;
 status = latex_read_svalue(b_data, WDSName1, i_WDSName);
 if(status == 0) strcpy((obj1[*nobj1]).wds, WDSName1);
@@ -136,10 +136,11 @@ if(status == 0) strcpy((obj1[*nobj1]).discov_name, ObjectName1);
 if(i_filter > 0) {
   status = latex_read_svalue(b_data, filter1, i_filter);
   if(status == 0) strcpy(me->filter, filter1);
+  check_filter(filter1, b_data);
   }
 
-status = latex_read_dvalue(b_data, &epoch1, i_epoch, iverbose);
-if(status == 0) me->epoch = epoch1;
+status = latex_read_dvalue(b_data, &BesselEpoch1, i_epoch, iverbose);
+if(status == 0) me->bessel_epoch = BesselEpoch1;
 status = latex_read_dvalue(b_data, &rho1, i_rho, iverbose);
 if((status != 0) || (rho1 == NO_DATA)) (*nunres1)++;
 if(status == 0) { 
@@ -269,13 +270,14 @@ return(status);
 *
 * OUTPUT:
 *  WDSName1, ObjectName1
-*  epoch1, rho1, drho1, theta1, dtheta1
+*  BesselEpoch1, rho1, drho1, theta1, dtheta1
 ***************************************************************************/
 int tex_calib_get_meas_from_object(OBJECT *obj1, int nobj1, 
                                    char *WDSName0, char *ObjectName0,
                                    double epoch_obs0,
                                    char *WDSName1, char *ObjectName1,
-                                   double *epoch1, char *filt1, int *eyep1, 
+                                   double *BesselEpoch1, char *filt1, 
+                                   int *eyep1, 
                                    double *rho1, double *err_rho1, 
                                    double *theta1, double *err_theta1)
 {
@@ -316,7 +318,7 @@ for(i = 0; i < nobj1; i++) {
   strcpy(discov_name, obj1[i].discov_name);
   extract_companion_from_name(discov_name, discov_name1, discov_comp1, &len1);
   maxlen0 = MAXI(len0, len1);
-  epoch_obs = (obj1[i].meas[0]).epoch;
+  epoch_obs = (obj1[i].meas[0]).bessel_epoch;
   if((strcmp(WDSName0, wds_name) == 0)
      && (strncmp(object_name0, discov_name, maxlen0) == 0)
      && (ABS(epoch_obs - epoch_obs0) < 0.01) ){
@@ -328,7 +330,7 @@ if(ifound >= 0) {
   strcpy(WDSName1, obj1[ifound].wds);
   strcpy(ObjectName1, obj1[ifound].discov_name);
   me = &(obj1[ifound]).meas[0];
-  *epoch1 = me->epoch;
+  *BesselEpoch1 = me->bessel_epoch;
   strcpy(filt1, me->filter);
   *eyep1 = me->eyepiece;
   *rho1 = me->rho;
@@ -348,11 +350,11 @@ return(status);
 *
 * OUTPUT:
 *  WDSName1, ObjectName1
-*  epoch1, rho1, drho1, theta1, dtheta1
+*  BesselEpoch1, rho1, drho1, theta1, dtheta1
 ***************************************************************************/
 int tex_calib_get_meas_from_csv_object(OBJECT *obj1, int nobj1, 
                                    char *ObjectName0, double epoch_obs0,
-                                   char *ObjectName1, double *epoch1,
+                                   char *ObjectName1, double *BesselEpoch1,
                                    int *eyep1, double *rho1, double *err_rho1, 
                                    double *theta1, double *err_theta1,
                                    double *dmag1)
@@ -387,7 +389,7 @@ for(i = 0; i < nobj1; i++) {
   jlp_compact_string(discov_name, 64);
   extract_companion_from_name(discov_name, discov_name1, discov_comp1, &len1);
   maxlen0 = MAXI(len0, len1);
-  epoch_obs = (obj1[i].meas[0]).epoch;
+  epoch_obs = (obj1[i].meas[0]).bessel_epoch;
   if((strncmp(object_name0, discov_name, maxlen0) == 0)
      && (ABS(epoch_obs - epoch_obs0) < 0.01) ){
     ifound = i;
@@ -399,7 +401,7 @@ if(ifound >= 0) {
   strcpy(ObjectName1, obj1[ifound].discov_name);
   printf("UUUU/ObjectName1=>%s< object_name=>%s< \n", ObjectName1, object_name0);
   me = &(obj1[ifound]).meas[0];
-  *epoch1 = me->epoch;
+  *BesselEpoch1 = me->bessel_epoch;
   *eyep1 = me->eyepiece;
   *rho1 = me->rho;
   *err_rho1 = me->drho;
@@ -422,14 +424,15 @@ int astrom_write_publi_table(FILE *fp_out, int comments_wanted, OBJECT *obj,
 MEASURE *me, *me_next;
 int good_q, nm, io, nlines, jj, jnext, nl_max, status;
 char qflag[20], asterisk[20], exclam[20], q_error[1], wds_name[40], q_notes[20];
-register int i, j;
+int i, j;
 
 /* Portrait: nl_max=55 (MNRAS for one page) */
+/* Portrait: nl_max=53 (Astron. Nachr. for one page) */
 /* Landscape: nl_max= 30 */
  if(comments_wanted)
    nl_max = 30;
  else
-   nl_max = 53;
+   nl_max = 50;
 
 strcpy(asterisk,"\\rlap{$^*$}");
 strcpy(exclam,"\\rlap{!}");
@@ -443,32 +446,24 @@ for(i = 0; i < nobj; i++) {
   nm = (obj[io]).nmeas;
 /* New table header in publi_mode */
   if(nlines > nl_max) {
+    fprintf(fp_out,"\\jlpEndTable \n");
+/*
     fprintf(fp_out,"& & & & & & & & & \\\\ \n");
     fprintf(fp_out,"\\hline \n");
     fprintf(fp_out,"\\end{tabular*} \n");
+*/
 /* Problem for too big tables, so I only use tabular for big tables: */
-    if(!tabular_only) fprintf(fp_out,"\\end{table*} \n");
+//    if(!tabular_only) fprintf(fp_out,"\\end{table*} \n");
   }
   if((nlines == -1) || (nlines > nl_max)) {
 /* JLP to obtain the same table number:
 */
 /* Problem for too big tables, so I only use tabular for big tables: */
     if(!tabular_only) {
-      if(nlines != -1) fprintf(fp_out,"\\addtocounter{table}{-1}\n");
-      fprintf(fp_out,"\\begin{table*} \n");
+//      if(nlines != -1) fprintf(fp_out,"\\addtocounter{table}{-1}\n");
+//      fprintf(fp_out,"\\begin{table*} \n");
       }
-    fprintf(fp_out,"\\tabcolsep=1mm \n");
-//    fprintf(fp_out,"\\begin{tabular*}{\\textwidth}{clrcccccrccl} \n");
-    fprintf(fp_out,"\\begin{tabular*}{\\textwidth}{clcccccrcl} \n");
-    fprintf(fp_out,"\\hline \n");
-    fprintf(fp_out,"& & & & & & & & & \\\\ \n");
-//    fprintf(fp_out,"WDS & Name & ADS & Epoch & Fil. & Eyep. & $\\rho$ & $\\sigma_\\rho$ & \\multicolumn{1}{c}{$\\theta$} & $\\sigma_\\theta$ & Orb. & Notes \\\\ \n");
-    fprintf(fp_out,"WDS & Name & Epoch & Fil. & Eyep. & $\\rho$ & $\\sigma_\\rho$ & \\multicolumn{1}{c}{$\\theta$} & $\\sigma_\\theta$ & Notes \\\\ \n");
-//    fprintf(fp_out,"& &       &       &        & (mm)& (\") & (\") & ($^\\circ$) & ($^\\circ$) & & \\\\ \n");
-    fprintf(fp_out,"& &       &        & (mm)& (\") & (\") & ($^\\circ$) & ($^\\circ$) & \\\\ \n");
-    fprintf(fp_out,"& & & & & & & \\\\ \n");
-    fprintf(fp_out,"\\hline \n");
-    fprintf(fp_out,"& & & & & & & \\\\ \n");
+    fprintf(fp_out,"\\jlpBeginTable \n");
     nlines = 0;
   }
 
@@ -492,16 +487,17 @@ if(i < 4) {
 * the mean of the two: */
     for(jnext = j+1; jnext < nm; jnext++) {
        me_next = &(obj[io]).meas[jnext];
-       if(!me_next->flagged_out && (ABS(me->epoch - me_next->epoch) < 0.001) 
+       if(!me_next->flagged_out && (ABS(me->bessel_epoch - me_next->bessel_epoch) < 0.001) 
          && !strncmp(me->filter,me_next->filter,3)
          && (me->eyepiece == me_next->eyepiece)
          && (me_next->rho != NO_DATA) && (me_next->theta != NO_DATA) ) {
 /* Too many messages in case of error:
          printf("astrom_write_publi/Warning same filter, epoch and eyepiece for object %s: I compute the mean (j=%d, jnext=%d)\n",
           obj[io].wds, j, jnext);
-         printf("(filter=%s, epoch=%.4f (me_epoch=%.4f), eyepiece=%d)\n", me->filter, me_next->epoch,
-                 me->epoch, me->eyepiece);
-         printf("ABS=%f\n", ABS(me->epoch - me_next->epoch)); 
+         printf("(filter=%s, bessel_epoch=%.4f (me_bessel_epoch=%.4f), eyepiece=%d)\n", 
+                me->filter, me_next->bessel_epoch,
+                me->bessel_epoch, me->eyepiece);
+         printf("ABS=%f\n", ABS(me->bessel_epoch - me_next->bessel_epoch)); 
 */
          astrom_compute_mean_of_two_measures(obj, io, j, jnext);
          }
@@ -544,34 +540,28 @@ if(i < 4) {
 /*** Format for first line of an object */
 /* October 2008: 3 decimals for the epoch */
   if(me->rho != NO_DATA) 
-//    fprintf(fp_out,"%s & %s%s & %s & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f &  & %s %s\\\\\n", 
     fprintf(fp_out,"%s & %s%s & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f & %s %s\\\\\n", 
          wds_name, obj[io].discov_name, obj[io].comp_name, 
-//         obj[io].ads, me->epoch, me->filter, 
-         me->epoch, me->filter, 
+         me->bessel_epoch, me->filter, 
          me->eyepiece, me->rho, me->drho, me->theta, qflag, me->dtheta, 
          me->notes, q_notes);
   else
-//    fprintf(fp_out,"%s & %s%s & %s & %.3f & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata &  & %s \\\\\n", 
-    fprintf(fp_out,"%s & %s%s & %.3f & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata &  & %s \\\\\n", 
+    fprintf(fp_out,"%s & %s%s & %.3f & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata & %s \\\\\n", 
          wds_name, obj[io].discov_name, obj[io].comp_name, 
-//         obj[io].ads, me->epoch, me->filter, 
-         me->epoch, me->filter, 
+         me->bessel_epoch, me->filter, 
          me->eyepiece, me->notes);
   } /* EOF j == 0 */
 // Oct2020: jj is no longer used for the same object (idem removed !)
 /*** Format for subsequent lines of an object 
   else {
   if(me->rho != NO_DATA) 
-//    fprintf(fp_out,"\\idem & \\idem & \\idem & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f & & %s %s\\\\\n", 
     fprintf(fp_out,"\\idem & \\idem & %.3f & %s & %d & %.3f & %.3f & %.1f%s & %.1f & %s %s\\\\\n", 
-         me->epoch, me->filter, 
+         me->bessel_epoch, me->filter, 
          me->eyepiece, me->rho, me->drho, me->theta, qflag, me->dtheta, 
          me->notes, q_notes);
   else
-//    fprintf(fp_out,"\\idem & \\idem & \\idem & %.3f & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata & & %s \\\\\n", 
     fprintf(fp_out,"\\idem & \\idem & %.3f & %s & %d & \\nodata & \\nodata & \\nodata & \\nodata & %s \\\\\n", 
-         me->epoch, me->filter, me->eyepiece, me->notes);
+         me->bessel_epoch, me->filter, me->eyepiece, me->notes);
   } // EOF j != 0 
 */
  nlines++;
@@ -581,14 +571,18 @@ if(i < 4) {
  } /* EOF loop on j */
 } /* EOF loop on i */
 
+/*
  fprintf(fp_out,"& & & & & & & \\\\ \n");
  fprintf(fp_out,"\\hline \n");
  fprintf(fp_out,"\\end{tabular*} \n \n");
- fprintf(fp_out,"Note: In column 9, the exponent $^*$ indicates that the position angle\n");
- fprintf(fp_out,"$\\theta$ could be determined without the 180$^\\circ$ ambiguity.\n");
+*/
+
+// fprintf(fp_out,"Note: In column 9, the exponent $^*$ indicates that the position angle\n");
+// fprintf(fp_out,"$\\theta$ could be determined without the 180$^\\circ$ ambiguity.\n");
 \
 /* Problem for too big tables, so I only use tabular for big tables: */
- if(!tabular_only) fprintf(fp_out,"\\end{table*} \n");
+// if(!tabular_only) fprintf(fp_out,"\\end{table*} \n");
+ fprintf(fp_out, "\\jlpEndTable \n");
 
 return(0);
 }
@@ -604,7 +598,7 @@ MEASURE *me, *me_next;
 int good_q, nm, io, nlines, jj, jnext, nl_max, status;
 char qflag[20], asterisk[20], exclam[20], q_error[1], wds_name[40]; 
 char q_notes[20], dmag_string[16], nd_notes[16];
-register int i, j;
+int i, j;
 
 /* Portrait: nl_max=55 (MNRAS for one page) */
 /* Landscape: nl_max= 30 */
@@ -626,30 +620,23 @@ for(i = 0; i < nobj; i++) {
   nm = (obj[io]).nmeas;
 /* New table header in publi_mode */
   if(nlines > nl_max) {
-    fprintf(fp_out,"& & & & & & & & & \\\\ \n");
-    fprintf(fp_out,"\\hline \n");
-    fprintf(fp_out,"\\end{tabular*} \n");
+
+//    fprintf(fp_out,"& & & & & & & & & \\\\ \n");
+//    fprintf(fp_out,"\\hline \n");
+//    fprintf(fp_out,"\\end{tabular*} \n");
 /* Problem for too big tables, so I only use tabular for big tables: */
-    if(!tabular_only) fprintf(fp_out,"\\end{table*} \n");
+//    if(!tabular_only) fprintf(fp_out,"\\end{table*} \n");
+    fprintf(fp_out, "\\jlpEndTable \n");
   }
   if((nlines == -1) || (nlines > nl_max)) {
 /* JLP to obtain the same table number:
 */
 /* Problem for too big tables, so I only use tabular for big tables: */
     if(!tabular_only) {
-      if(nlines != -1) fprintf(fp_out,"\\addtocounter{table}{-1}\n");
-      fprintf(fp_out,"\\begin{table*} \n");
+//      if(nlines != -1) fprintf(fp_out,"\\addtocounter{table}{-1}\n");
+//      fprintf(fp_out,"\\begin{table*} \n");
       }
-    fprintf(fp_out,"\\tabcolsep=1mm \n");
-//    fprintf(fp_out,"\\begin{tabular*}{\\textwidth}{clrcccccrccl} \n");
-    fprintf(fp_out,"\\begin{tabular*}{\\textwidth}{clccccrccl} \n");
-    fprintf(fp_out,"\\hline \n");
-    fprintf(fp_out,"& & & & & & & & & \\\\ \n");
-    fprintf(fp_out,"WDS & Name & Epoch & Bin. & $\\rho$ & $\\sigma_\\rho$ & \\multicolumn{1}{c}{$\\theta$} & $\\sigma_\\theta$ & Dm & Notes \\\\ \n");
-    fprintf(fp_out,"& &     &     & (\") & (\") & ($^\\circ$) & ($^\\circ$) & & \\\\ \n");
-    fprintf(fp_out,"& & & & & & & & & \\\\ \n");
-    fprintf(fp_out,"\\hline \n");
-    fprintf(fp_out,"& & & & & & & & & \\\\ \n");
+    fprintf(fp_out, "\\jlpBeginTable \n");
     nlines = 0;
   }
 
@@ -665,9 +652,9 @@ for(i = 0; i < nobj; i++) {
 // If too small, invalidate it:
          me->rho = NO_DATA;
 // Unresolved case:
-         fprintf(fp_out,"%s & %s%s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata &  & Unres. \\\\\n", 
+         fprintf(fp_out,"%s & %s%s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata &  & NR \\\\\n", 
              wds_name, obj[io].discov_name, obj[io].comp_name, 
-             me->epoch, me->eyepiece); //  me->notes);
+             me->bessel_epoch, me->eyepiece); //  me->notes);
       } else {
 /* For DEBUG:
 if(i < 4) {
@@ -683,16 +670,17 @@ if(i < 4) {
 * the mean of the two: */
     for(jnext = j+1; jnext < nm; jnext++) {
        me_next = &(obj[io]).meas[jnext];
-       if(!me_next->flagged_out && (ABS(me->epoch - me_next->epoch) < 0.001) 
+       if(!me_next->flagged_out && (ABS(me->bessel_epoch - me_next->bessel_epoch) < 0.001) 
 //         && !strncmp(me->filter,me_next->filter,3)
          && (me->eyepiece == me_next->eyepiece)
          && (me_next->rho != NO_DATA) && (me_next->theta != NO_DATA) ) {
 /* Too many messages in case of error:
          printf("astrom_write_publi_gili/Warning same filter, epoch and eyepiece for object %s: I compute the mean (j=%d, jnext=%d)\n",
           obj[io].wds, j, jnext);
-         printf("(filter=%s, epoch=%.4f (me_epoch=%.4f), eyepiece=%d)\n", me->filter, me_next->epoch,
-                 me->epoch, me->eyepiece);
-         printf("ABS=%f\n", ABS(me->epoch - me_next->epoch)); 
+         printf("(filter=%s, bessel_epoch=%.4f (me_bessel_epoch=%.4f), eyepiece=%d)\n", 
+                me->filter, me_next->bessel_epoch,
+                me->bessel_epoch, me->eyepiece);
+         printf("ABS=%f\n", ABS(me->bessel_epoch - me_next->bessel_epoch)); 
 */
          astrom_compute_mean_of_two_measures(obj, io, j, jnext);
          }
@@ -746,13 +734,13 @@ if(i < 4) {
 WWWWWWWWWWWWWWWW **************/
     fprintf(fp_out,"%s & %s%s & %.3f & %d & %.3f & %.3f & %.1f%s & %.1f & %s & %s\\\\\n", 
          wds_name, obj[io].discov_name, obj[io].comp_name,
-         me->epoch, me->eyepiece, me->rho, me->drho, 
+         me->bessel_epoch, me->eyepiece, me->rho, me->drho, 
          me->theta, qflag, me->dtheta, dmag_string, nd_notes); //, me->notes, q_notes);
   else {
 // Doesn't seem to occur:
-         fprintf(fp_out,"%s & %s%s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata &  & Unres. \\\\\n", 
+         fprintf(fp_out,"%s & %s%s & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata &  & NR \\\\\n", 
              wds_name, obj[io].discov_name, obj[io].comp_name, 
-             me->epoch, me->eyepiece); //  me->notes);
+             me->bessel_epoch, me->eyepiece); //  me->notes);
      }
   } /* EOF j >= 0 */
 /*** Format for subsequent lines of an object */
@@ -760,11 +748,11 @@ WWWWWWWWWWWWWWWW **************/
   else {
   if(me->rho != NO_DATA) 
     fprintf(fp_out,"\\idem & \\idem & %.3f & %d & %.3f & %.3f & %.1f%s & %.1f & %s & %s \\\\\n", 
-         me->epoch,  me->eyepiece, me->rho, me->drho, me->theta, 
+         me->bessel_epoch,  me->eyepiece, me->rho, me->drho, me->theta, 
          qflag, me->dtheta, dmag_string, nd_notes); //, me->notes, q_notes);
   else
     fprintf(fp_out,"\\idem & \\idem & %.3f & %d & \\nodata & \\nodata & \\nodata & \\nodata & \nodata & \\\\\n", 
-         me->epoch, me->eyepiece); //, me->notes);
+         me->bessel_epoch, me->eyepiece); //, me->notes);
     } // EOF j != 0 
 ***/
   } // End of resolved case
@@ -774,14 +762,17 @@ WWWWWWWWWWWWWWWW **************/
  } /* EOF loop on j */
 } /* EOF loop on i */
 
+/*
  fprintf(fp_out,"& & & & & & & & & \\\\ \n");
  fprintf(fp_out,"\\hline \n");
  fprintf(fp_out,"\\end{tabular*} \n \n");
  fprintf(fp_out,"Note: In column 7, the exponent $^*$ indicates that the position angle\n");
  fprintf(fp_out,"$\\theta$ could be determined without the 180$^\\circ$ ambiguity.\n");
 \
+*/
 /* Problem for too big tables, so I only use tabular for big tables: */
- if(!tabular_only) fprintf(fp_out,"\\end{table*} \n");
+// if(!tabular_only) fprintf(fp_out,"\\end{table*} \n");
+ fprintf(fp_out, "\\jlpEndTable \n");
 
 return(0);
 }
@@ -799,10 +790,13 @@ int tex_calib_write_miniheader(FILE *fp_out)
   fprintf(fp_out,"\\parindent=0pt \n");
   fprintf(fp_out,"\\def\\nodata{---} \n");
   fprintf(fp_out,"\\begin{document} \n");
+  fprintf(fp_out, "\\jlpBBeginTable \n");
+/*
   fprintf(fp_out,"\\begin{table*} \n");
   fprintf(fp_out,"\\tabcolsep=1mm \n");
   fprintf(fp_out,"\\caption{Relative astrometry of binary stars} \n");
   fprintf(fp_out,"\\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|} \n");
   fprintf(fp_out,"\\hline \n");
+*/
 return (0);
 }

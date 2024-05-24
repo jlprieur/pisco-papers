@@ -50,7 +50,7 @@ int astrom_add_WDS_from_discov(FILE *fp_in, FILE *fp_out, char *WDS_catalog)
 double magV, B_V, paral, err_paral, magV_A, magV_B; 
 double year, WdsLastYear, WdsLastTheta, WdsLastRho, mag_A, mag_B;
 int iline, status, gili_format;
-int found, found1;
+int meas_was_found, found1;
 char b_in[256], discov_name[64], *pc;
 char wds_name[64], wds_discov_name[64], wds_comp_name[64];
 char comp_name[64], spectral_type[64]; 
@@ -114,12 +114,12 @@ if(comp_name[0] != '\0') printf("DEBUG1234/comp_name=%s\n ", comp_name);
                                   wds_name,
                                   &WdsLastYear, &WdsLastRho, &WdsLastTheta, 
                                   &mag_A, &mag_B, spectral_type, 
-                                  &found);
+                                  &meas_was_found);
 #ifdef DEBUG
-printf("(discov_name=%s< wds_name=>%s< stat=%d)\n", 
-       discov_name, wds_name, status);
+printf("(from get_data_from_WDS_catalog/discov_name=%s< comp_name=%s wds_name=>%s< meas_was_found=%d)\n", 
+       discov_name, comp_name, wds_name, meas_was_found);
 #endif
-         if(found != 0) {
+         if(meas_was_found != 0) {
            sprintf(b_in, "%s = %s%s & %d & & & & & & & WY=%d WT=%d WR=%3.1f \\\\\n",
                    wds_name, discov_name, comp_name, 
                    (int)year, (int)WdsLastYear, 
@@ -138,7 +138,7 @@ printf("(discov_name=%s< wds_name=>%s< stat=%d)\n",
            } else {
           fprintf(stderr, "astrom_add_WDS_from_discov/Error: wds_name not found for discov=%s\n",  
                    discov_name);
-           sprintf(b_in, "%s%s & %d & & & & & & \\\\\n",
+           sprintf(b_in, "%s%s & %d & & & & & & ERROR_WDS_NAME_NOT_FOUND\\\\\n",
                    discov_name, comp_name, (int)year);
            }
         } 

@@ -11,6 +11,7 @@
 *************************************************************************/
 #include <math.h>
 #include "jlp_catalog_utils.h"
+#include "jlp_string.h"  // jlp_trim_string
 #include "residuals_utils.h"
 
 #define SQUARE(a) ((a)*(a))
@@ -150,7 +151,7 @@ fp_orbit_data = NULL;
 
 // Open output data file containing the measurements, the residual vectors 
 sprintf(filename, "%s_orb_resi.dat", output_ext);
-trim_string(filename, 80);
+jlp_trim_string(filename, 80);
 
 // and the orbit (in XY plane) 
 if((fp_orbit_data = fopen(filename, "w")) == NULL) {
@@ -171,7 +172,7 @@ if((fp_in = fopen(measures_infile, "r")) == NULL) {
 
 /* Open output file with the measurements and the O-C residuals: */
 sprintf(filename, "%s.OM", output_ext);
-trim_string(filename, 80);
+jlp_trim_string(filename, 80);
 
 if((fp_Drho_Dtheta = fopen(filename, "w")) == NULL) {
    fprintf(stderr, "residuals2_main/Fatal error opening output file: %s\n",
@@ -182,7 +183,7 @@ if((fp_Drho_Dtheta = fopen(filename, "w")) == NULL) {
 
 /* Open output file with the measurements and the O-C residuals: */
 sprintf(filename, "%s.dxy", output_ext);
-trim_string(filename, 80);
+jlp_trim_string(filename, 80);
 
 /* Open file with residuals (Dx, Dy) to test whether there is a third body 
 */
@@ -196,7 +197,7 @@ trim_string(filename, 80);
 
 /* Open latex output table with the residuals (and authors): */
 sprintf(filename, "%s_resi.tex", output_ext);
-trim_string(filename, 80);
+jlp_trim_string(filename, 80);
 
 if((fp_latex = fopen(filename, "w")) == NULL) {
    fprintf(stderr, "residuals2_main/Fatal error opening output file: %s\n",
@@ -270,7 +271,7 @@ if((fp_in = fopen(measures_infile, "r")) == NULL) {
 /* Open output file which is a copy of the input file
 * with bad measurements removed : */
 sprintf(filename, "%s_select.dat", output_ext);
-trim_string(filename, 80);
+jlp_trim_string(filename, 80);
 
  if((fp_selection = fopen(filename, "w")) == NULL) {
    fprintf(stderr, "residuals2_main/Fatal error opening output file: %s\n",

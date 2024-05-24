@@ -8,14 +8,10 @@
 ##############################################
 mylib=$(JLPLIB)/jlp
 CPP = c++
-JLIB=$(mylib)/newplot0.a $(mylib)/jlp_wxplot.a $(mylib)/jlp_splot.a \
-	$(mylib)/jlp_fits.a $(mylib)/libcfitsio.a $(mylib)/jlp_fits.a \
-        $(mylib)/jlp_splot_idv.a $(mylib)/jlp_splot.a \
-        $(mylib)/jlpacc.a $(mylib)/jlp_numeric.a 
 JLIB=$(mylib)/jlp_wxplot.a $(mylib)/jlp_splot.a \
-	$(mylib)/jlp_fits.a $(mylib)/libcfitsio.a $(mylib)/jlp_fits.a \
+	$(mylib)/jlp_fits.a $(mylib)/libcfitsio.a \
         $(mylib)/jlp_splot_idv.a $(mylib)/jlp_splot.a \
-        $(mylib)/jlp_numeric.a 
+        $(mylib)/jlp_numeric.a  $(mylib)/jlp_fits.a 
 
 PSCPLIB = pscplib
 CATALOG_OBJ=$(PSCPLIB)/jlp_catalog_utils.o $(PSCPLIB)/PISCO_catalog_utils.o \
@@ -52,7 +48,7 @@ CFLAGS = -g -I. -I$(PSCPLIB) -I$(myjlib)/jlp_fits -I$(myjlib)/jlp_numeric \
 .cpp.exe:
 	$(CPP) -c $(CFLAGS) $*.cpp
 	$(CPP) $(CFLAGS) -o $(EXEC)/$*.exe $*.o \
-	$(CATALOG_OBJ) \
+	$(CATALOG_OBJ) $(MYPLOT_OBJ) \
 	$(MATHLIB) $(JLIB) $(MATHLIB) $(XLIB) $(WX_LIB) -lz -lm 
 	rm $*.o
 

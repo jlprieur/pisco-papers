@@ -18,15 +18,21 @@ int astrom_add_epoch_from_fits_file(FILE *fp_in, FILE *fp_out,
                                     char *fits_directory);
 int astrom_check_if_measurement(char *b_in, char *fits_filename, char *date1,  
                                 int *eyepiece1, int *is_measurement);
-int astrom_calib_publi(FILE *fp_in, FILE *fp_out, double *calib_scale1,
-                       int *calib_eyepiece1, int n_eyepieces1, double theta0, 
-                       double sign, int i_filename, int i_date, int i_filter,
+int astrom_calib_publi(FILE *fp_in, FILE *fp_out, 
+                       double *calib_date1, int *calib_dd1, int *calib_mm1,
+                       int *calib_year1, double *calib_scale1,
+                       int *calib_eyepiece1, int *n_eyepieces1, 
+                       double *theta01, int *sign1, int ncalib1, int ndim, 
+                       int i_filename, int i_date, int i_filter,
                        int i_eyepiece, int i_rho, int i_drho, int i_theta, 
                        int i_dtheta, int i_notes, int comments_wanted, 
                        char *filein, int in_astrom_fmt, int out_calib_fmt);
-int astrom_calib_copy(FILE *fp_in, FILE *fp_out, double *calib_scale1,
-                      int *calib_eyepiece1, int n_eyepieces1, double theta0,
-                      double sign, int i_date, int i_eyepiece, int i_rho,
+int astrom_calib_copy(FILE *fp_in, FILE *fp_out, 
+                      double *calib_date1, int *calib_dd1, int *calib_mm1,
+                      int *calib_year1, double *calib_scale1,
+                      int *calib_eyepiece1, int *n_eyepieces1, 
+                      double *theta01, int *sign1, int ncalib1, int ndim, 
+                      int i_date, int i_eyepiece, int i_rho,
                       int i_drho, int i_theta, int i_dtheta,
                       int comments_wanted, int input_with_header);
 int astrom_add_WDS(FILE *fp_in, FILE *fp_out, char *PISCO_cat, char *WDS_cat); 

@@ -259,8 +259,8 @@ printf(" iline=%d Data line: >%s<\n", iline, b_data);
 #ifdef DEBUG_
        for(i = 1; i < ncols; i++) printf(" Output: i=%d yy=%f\n", i, yy[i]);
 #endif
-         fprintf(fp_out,"%.8g %.8g", xx, yy[0]); 
-         for(i = 1; i < ncols; i++) fprintf(fp_out," %.8g", yy[i]); 
+         fprintf(fp_out,"%.3f %.3f", xx, yy[0]); 
+         for(i = 1; i < ncols; i++) fprintf(fp_out," %.3f", yy[i]); 
          if(icol_name)
            fprintf(fp_out,"%s \n", name); 
          else

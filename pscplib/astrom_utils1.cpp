@@ -27,7 +27,7 @@ or 16564+6502 = STF 2118 AB & 2004. & & & & & & & \\ (gili's format, old_Gdpisco
 ....
 *
 Keywords in the notes:
-EP=2004.133 (epoch)
+EP=2004.133 (BesselEpoch)
 WR=1.2      (Rho, WDS)
 WT=127      (Theta, WDS)
 WY=2002     (Year of WDS observation) 
@@ -47,8 +47,8 @@ LQ=3        (Quadrant with long integration)
 #include "jlp_string.h"
 #include "latex_utils.h"  // latex_read_svalue...
 
-/*
 #define DEBUG
+/*
 */
 
 /*
@@ -60,12 +60,17 @@ int astrom_read_object_data_for_name_only(char *b_data, char *star_name,
                             int *epoch_year, int in_astrom_fmt);
 int astrom_check_measure(char *b_data, int i_eyepiece, int i_rho, 
                          int i_drho, int i_theta, int i_dtheta);
-int astrom_calibrate_measures(OBJECT *obj, int nobj,  double *calib_scale1,
-                              int *calib_eyepiece1, int n_eyepieces1,
-                              double theta0, double sign);
-int astrom_calib_data_copy(char *b_data, char *b_out,  double *calib_scale1,
-                           int *calib_eyepiece1, double theta0, 
-                           double sign, int i_date, int i_eyepiece, int i_rho, 
+int astrom_calibrate_measures(OBJECT *obj, int nobj, double *calib_date1, 
+                              int *calib_dd1, int *calib_mm1,
+                              int *calib_year1, double *calib_scale1,
+                              int *calib_eyepiece1, int *n_eyepieces1,
+                              double *theta01, int *sign1, int ncalib1, int ndim);
+int astrom_calib_data_copy(char *b_data, char *b_out,
+                           double *calib_date1, int *calib_dd1, int *calib_mm1,
+                           int *calib_year1, double *calib_scale1,
+                           int *calib_eyepiece1, int *n_eyepieces1,
+                           double *theta01, int *sign1, int ncalib1, int ndim,
+                           int i_date, int i_eyepiece, int i_rho,
                            int i_drho, int i_theta, int i_dtheta);
 int astrom_add_new_measure(char *b_data, OBJECT *obj, int i_obj, int i_filename, 
                            int i_date, int i_filter, int i_eyepiece, int i_rho,
@@ -73,16 +78,18 @@ int astrom_add_new_measure(char *b_data, OBJECT *obj, int i_obj, int i_filename,
                            int comments_wanted);
 int astrom_read_new_measure(char *b_data, int i_filename, int i_date, 
                             int i_filter, int i_eyepiece, int i_rho, int i_drho,                            int i_theta, int i_dtheta, int i_notes, 
-                            char *filename2, char *notes2, double *epoch2, 
+                            char *filename2, char *notes2, 
+                            double *BesselEpoch2, 
                             char *filter2, int *eyepiece2, double *rho2, 
                             double *err_rho2, double *theta2,
                             double *err_theta2);
-int astrom_decode_data(char *b_data, char *date, double *epoch, double *rho, 
+int astrom_decode_data(char *b_data, char *date, double *BesselEpoch, 
+                       double *rho, 
                        double *drho, double *theta, double *dtheta, 
                        int *eyepiece, int i_date, int i_eyepiece, int i_rho, 
                        int i_drho, int i_theta, int i_dtheta);
-int astrom_compute_epoch_value(char *b_data, char *date, double *epoch,
-                               int icol);
+int astrom_compute_bessel_epoch_value(char *b_data, char *date, 
+                                      double *BesselEpoch, int icol);
 int astrom_read_WDS_CHARA(char *notes, double *WR, double *WT, double * WY);
 int astrom_read_quadrant_Q(char *notes, int *quadrant, int *dquadrant,
                            int comments_wanted);
@@ -92,15 +99,66 @@ int astrom_quadrant_is_consistent(MEASURE *me);
 int astrom_compute_statistics(FILE *fp_out, OBJECT *obj, int nobj, 
                               char *filein);
 int astrom_correct_theta_with_WDS_CHARA(OBJECT *ob, MEASURE *me);
-int astrom_read_epoch_from_notes(char *notes, double *epoch, int comments_wanted);
+int astrom_read_bessel_epoch_from_notes(char *notes, double *BesselEpoch, 
+                                        int delete_epoch_item);
 int astrom_read_dmag_from_notes(char *notes, double *dmag, double *ddmag,
                                 int comments_wanted);
 int astrom_preformat_wds_name(char *obj_wds, char *wds_name);
 int astrom_check_if_object_name(char *b_in, int *contains_object_name);
 int astrom_ra_sort_objects(OBJECT *obj, int *index_obj, int nobj);
 int astrom_name_sort_objects(OBJECT *obj, int *index_obj, int nobj);
+int check_filter(char *filter, char *b_data);
 */
 
+
+/*************************************************************************
+*
+* INPUT:
+*  ncalib1 : number of calibrations
+* OUTPUT:
+*  scale2, theta02, sign2 (if status == 0)
+*************************************************************************/
+int get_calib_scale(double *calib_date1, int *calib_dd1, int *calib_mm1,
+                    int *calib_year1, double *calib_scale1,
+                    int *calib_eyepiece1, int *n_eyepieces1, double *theta01, 
+                    int *sign1, int ncalib1, int ndim, double me_bessel_epoch, 
+                    int me_eyepiece, double *scale2, double *theta02, 
+                    int *sign2)
+{
+int i, k, icalib, eyepiece1, status = -1;
+*scale2 = 0.;
+*theta02 = 0.;
+*sign2 = 1;
+
+icalib = -1;
+for(i = 0; i < ncalib1; i++) {
+   if(me_bessel_epoch < calib_date1[i]) {
+     icalib = i - 1;
+     break;
+     }
+   } 
+
+/* Scale according to eyepiece: */
+ if(icalib >= 0) {
+    *theta02 = theta01[icalib];
+    *sign2 = sign1[icalib];
+// printf("QQQ: me_bessel_epoch=%.4f icalib=%d calib_date1[icalib]=%.4f \n",
+//         me_bessel_epoch, icalib, calib_date1[icalib]);
+    for(k = 0; k < n_eyepieces1[icalib]; k++) {
+      if(calib_eyepiece1[icalib * ndim + k] == me_eyepiece) { 
+                   *scale2 = calib_scale1[icalib * ndim + k];
+                   status = 0;
+                   break;
+                   }
+   }
+// printf("QQQ: scale=%.5f\n", *scale2);
+ }
+ if(status != 0) {
+    fprintf(stderr, "Error: icalib=%d me_bessel_epoch=%.4f icalib=%d calib_date1[icalib]=%.4f \n",
+         icalib, me_bessel_epoch, icalib, calib_date1[icalib]);
+   }
+return(status);
+}
 /*************************************************************************
 *
  22388+4419 = HO 295 AB & ADS 16138 & 2004. & & & & & & & orb \\
@@ -120,14 +178,19 @@ int astrom_read_new_object_line_for_wds_or_ads(char *b_data,
                             char *ads_name, double *WR, double *WT, 
                             double *WY, int i_notes, int in_astrom_fmt)
 {
-char *pc, buff[60];
+char *pc, buff[64], wds_null[64], wds_not_found[64];
 int istat, WDS_status, ADS_status, icol, ncol, new_object_line = 0;
+int status;
+
 WDS_status = 1;
 ADS_status = 1;
 ads_name[0] = '\0';
 discov_name[0] = '\0';
 comp_name[0] = '\0';
 wds_name[0] = '\0';
+
+strcpy(wds_null,"00000+0000");
+strcpy(wds_not_found, "WDS_NAME_NOT_FOUND");
 
 /* 2009/NEW/Preliminary step: check is syntax is OK: */
 pc = b_data;
@@ -137,7 +200,7 @@ while(*pc) {
  pc++;
  }
 // DEBUG 
-printf("AAA in_astrom_fmt=%d ncol=%d\n", in_astrom_fmt, ncol);
+printf("4555/in_astrom_fmt=%d ncol=%d\n", in_astrom_fmt, ncol);
 /*
 * in_astrom_fmt : =1 if gili's format (empty ADS column, no orb info)
 *                 =2 if gili's format (no ADS column, no orb info)
@@ -165,8 +228,10 @@ printf("AAA in_astrom_fmt=%d ncol=%d\n", in_astrom_fmt, ncol);
 // JLP2022: I add the possibility of 8 columns
 //  if((b_data[0] != '&') && ((ncol == 9) || (ncol == 8))) { 
   if((b_data[0] != '&') && (b_data[0] != '\\') && (b_data[0] != '%')) { 
+printf("4555/OK1\n");
      new_object_line = 1; 
    } else {
+printf("4555/NOK1\n");
 #ifdef DEBUG
   fprintf(stderr, "read_new_object_line/Bad new object syntax in following line:\n %s\n", b_data); 
   fprintf(stderr, "read_new_object_line/Error ncol=%d (should be 9 for new object, 10 for measures !), in_astrom_fmt=%d\n", 
@@ -193,14 +258,26 @@ while(*pc && *pc != '=') pc++;
   }
 
 /* Look for the first item ending with a "=" symbol: */
+status = -1;
 if(!WDS_status) {
   pc = buff;
   while(*pc && *pc != '=') pc++;
     if(*pc == '=') {
     *pc = '\0';
     strcpy(wds_name, buff);
-    WDS_status = 0;
+    status = 0;
     }
+} else if (strstr(b_data, wds_not_found) != NULL) {
+// 16564+6502 = STF 2118 AB & ADS 10279 & 2004. & & & & & & & orb \\
+   strcpy(wds_name, wds_null);
+   strncpy(wds_name, wds_null, strlen(wds_null));
+   strcpy(discov_name, buff);
+#ifdef DEBUG
+printf("wds_name=%s< len=%d wds_null=%s len2=%d\n", 
+           wds_name, strlen(wds_name), wds_null, strlen(wds_null));
+printf("wds_name=%s discov_name=%s\n", wds_name, discov_name);
+#endif
+   status = 0;
 }
 
  ADS_status = 0;
@@ -224,8 +301,6 @@ if(!istat){
     }
  else {
    strcpy(ads_name,"\\nodata");
-/* Stop here if no discover's name was found either: */
-   if(WDS_status) return(3);
   }
  }
 }
@@ -237,7 +312,7 @@ if(!istat){
 
 } /* EOF !status case */
 
-return(ADS_status);
+return(status);
 }
 /*************************************************************************
 *
@@ -252,10 +327,11 @@ HO209AB & 2015 & & & & & & & \\
 *  in_astrom_fmt: flag set to 1 if gili's format (no ADS column and no orb info)
 *
 * OUTPUT:
-*  discov_name, comp_name, epoch_year
+*  discov_name, comp_name, bessel_epoch_year
 *************************************************************************/
 int astrom_read_object_data_for_name_only(char *b_data, char *discov_name,
-                                          char *comp_name, double *epoch_year,
+                                          char *comp_name, 
+                                          double *bessel_epoch_year,
                                           int in_astrom_fmt)
 {
 int status = -1, ival;
@@ -265,7 +341,7 @@ int istat, star_name_status, icol;
 star_name_status = 1;
 discov_name[0] = '\0';
 comp_name[0] = '\0';
-*epoch_year = 0.;
+*bessel_epoch_year = 0.;
 
 if(b_data[0] == '&') {
 /* Read discov_name in 2nd column: */
@@ -275,13 +351,13 @@ if((istat == 0) && (buff[0] != '\0')){
  star_name_status = 0;
  strcpy(full_name, buff);
 
-/* Then try to read epoch_year in 3rd column: */
+/* Then try to read bessel_epoch_year in 3rd column: */
   star_name_status = -1;
   icol = 3;
   istat = latex_read_ivalue(b_data, &ival, icol); 
   if(istat == 0){
     if((ival > 2000) && (ival < 2100)) {
-      *epoch_year = (double)ival;
+      *bessel_epoch_year = (double)ival;
       star_name_status = 0;
     }
   }
@@ -295,13 +371,13 @@ if((istat == 0) && (buff[0] != '\0')){
  star_name_status = 0;
  strcpy(full_name, buff);
 }
-/* Then try to read epoch_year in 2nd column: */
+/* Then try to read bessel_epoch_year in 2nd column: */
   star_name_status = -1;
   icol = 2;
   istat = latex_read_ivalue(b_data, &ival, icol); 
   if(istat == 0){
     if((ival > 2000) && (ival < 2100)) {
-      *epoch_year = (double)ival;
+      *bessel_epoch_year = (double)ival;
       star_name_status = 0;
     }
   }
@@ -403,57 +479,29 @@ return(status);
 * OUPUT:
 * obj.meas updated with calibrated values
 *************************************************************************/
-int astrom_calibrate_measures(OBJECT *obj, int nobj,  double *calib_scale1,
-                              int *calib_eyepiece1, int n_eyepieces1,
-                              double theta0, double sign)
+int astrom_calibrate_measures(OBJECT *obj, int nobj, double *calib_date1, 
+                              int *calib_dd1, int *calib_mm1,
+                              int *calib_year1, double *calib_scale1,
+                              int *calib_eyepiece1, int *n_eyepieces1,
+                              double *theta01, int *sign1, int ncalib1,
+                              int ndim)
 {
 MEASURE *me;
-double scale;
-int nm;
-register int i, j, k;
+double scale, theta02;
+int nm, sign2, status; 
+int i, j, k;
 
 for(i = 0; i < nobj; i++) {
   nm = (obj[i]).nmeas;
   for(j = 0; j < nm; j++) {
     me = &(obj[i]).meas[j];
-
-/* Scale according to eyepiece: */
-    switch(me->eyepiece) {
-// I add the two possibilities 1 and 2 for Gili's Pisco2 (bin1 and bin2=2*bin1)
-      case 0: // I also add 0 ib case of bad file... 
-      case 1: 
-        for(k = 0; k < n_eyepieces1; k++) {
-         if(calib_eyepiece1[k] == 1) scale = calib_scale1[k];
-        }
-        break;
-      case 2: 
-        for(k = 0; k < n_eyepieces1; k++) {
-         if(calib_eyepiece1[k] == 2) scale = calib_scale1[k];
-        }
-        break;
-      case 4: 
-        for(k = 0; k < n_eyepieces1; k++) {
-         if(calib_eyepiece1[k] == 4) scale = calib_scale1[k];
-        }
-        break;
-      case 10: 
-        for(k = 0; k < n_eyepieces1; k++) {
-         if(calib_eyepiece1[k] == 10) scale = calib_scale1[k];
-        }
-        break;
-      case 20: 
-        for(k = 0; k < n_eyepieces1; k++) {
-         if(calib_eyepiece1[k] == 20) scale = calib_scale1[k];
-        }
-        break;
-      case 32: 
-        for(k = 0; k < n_eyepieces1; k++) {
-         if(calib_eyepiece1[k] == 32) scale = calib_scale1[k];
-        }
-        break;
-      default: 
-        fprintf(stderr, "astrom_calibrate_measures/Fatal error: i=%d eyepiece=%d\n",
-                i, me->eyepiece);
+    status = get_calib_scale(calib_date1, calib_dd1, calib_mm1, calib_year1,
+                             calib_scale1, calib_eyepiece1, n_eyepieces1,
+                             theta01, sign1, ncalib1, ndim, me->bessel_epoch, 
+                             me->eyepiece, &scale, &theta02, &sign2);
+     if(status != 0) {
+        fprintf(stderr, "astrom_calibrate_measures/Fatal error: obj[%d].discov=%s eyepiece=%d\n",
+                i, (obj[i]).discov_name, me->eyepiece);
         exit(-1);
         break;
       } 
@@ -461,7 +509,7 @@ for(i = 0; i < nobj; i++) {
    if(me->rho != NO_DATA) { 
     me->rho *= scale;
     me->drho *= scale;
-    me->theta = me->theta * sign + theta0;
+    me->theta = me->theta * sign2 + theta02;
     while(me->theta < 0.) me->theta += 360.;
     while(me->theta >= 360.) me->theta -= 360.;
     }
@@ -486,20 +534,22 @@ return(0);
 * OUTPUT:
 * b_out: line with calibrated measurement
 *************************************************************************/
-int astrom_calib_data_copy(char *b_data, char *b_out,  double *calib_scale1,
-                           int *calib_eyepiece1, int n_eyepieces1,
-                           double theta0, 
-                           double sign, int i_date, int i_eyepiece, int i_rho, 
+int astrom_calib_data_copy(char *b_data, char *b_out,
+                           double *calib_date1, int *calib_dd1, int *calib_mm1,
+                           int *calib_year1, double *calib_scale1,
+                           int *calib_eyepiece1, int *n_eyepieces1,
+                           double *theta01, int *sign1, int ncalib1, 
+                           int ndim, int i_date, int i_eyepiece, int i_rho,
                            int i_drho, int i_theta, int i_dtheta)
 {
-int status, eyepiece, k;
-double epoch, rho, drho, theta, dtheta, scale;
+int status, eyepiece, k, sign;
+double BesselEpoch, rho, drho, theta, dtheta, scale, theta0;
 char date[30];
 
 /* By default simply copy input to output: */
  strcpy(b_out, b_data);
 
- status = astrom_decode_data(b_data, date, &epoch, &rho, &drho, &theta, 
+ status = astrom_decode_data(b_data, date, &BesselEpoch, &rho, &drho, &theta, 
                              &dtheta, &eyepiece, i_date, i_eyepiece, i_rho, 
                              i_drho, i_theta, i_dtheta);
 // If not a good line with measurements, return from here
@@ -507,11 +557,16 @@ char date[30];
   return(status);
   }
 
- for(k = 0; k < 3; k++) {
-   if(eyepiece == calib_eyepiece1[k]) scale = calib_scale1[k];
-   }
-
 if(rho != NO_DATA) { 
+  status = get_calib_scale(calib_date1, calib_dd1, calib_mm1, calib_year1,
+                           calib_scale1, calib_eyepiece1, n_eyepieces1,
+                           theta01, sign1, ncalib1, ndim, BesselEpoch, 
+                           eyepiece, &scale, &theta0, &sign);
+   if(status != 0) {
+      fprintf(stderr, "astrom_calib_data_copy/get_calib_scale/Fatal error: BesselEpoch=%.3f eyepiece=%d\n",
+              BesselEpoch, eyepiece);
+      exit(-1);
+   } 
  rho *= scale;
  drho *= scale;
  theta = theta * sign + theta0;
@@ -536,10 +591,10 @@ if(!status) {
    }
 } /* EOF !NO_DATA */
 
-/* epoch with 3 decimals (October 2008)*/
-if((epoch > 0) && (!status)) {
+/* BesselEpoch with 3 decimals (October 2008)*/
+if((BesselEpoch > 0) && (!status)) {
    strcpy(b_data, b_out);
-   status = latex_write_dvalue(b_data, b_out, epoch, i_date, 3); 
+   status = latex_write_dvalue(b_data, b_out, BesselEpoch, i_date, 3); 
    }
 if(status) {
  printf("calib_data/Fatal error, updating array!\n");
@@ -562,7 +617,7 @@ return(0);
 * OUTPUT:
 * rho, drho, theta, dtheta
 * eyepiece
-* epoch
+* BesselEpoch
 *
 **************************************************************************/
 int astrom_add_new_measure(char *b_data, OBJECT *obj, int i_obj, 
@@ -571,11 +626,11 @@ int astrom_add_new_measure(char *b_data, OBJECT *obj, int i_obj,
                            int i_dtheta, int i_notes, int comments_wanted)
 {
 MEASURE *me;
-double epoch, rho, drho, theta, dtheta, ww, exact_epoch;
+double BesselEpoch, JulianEpoch, rho, drho, theta, dtheta, ww, exact_epoch;
 double dmag, ddmag;
-char notes[80], filter[20], date[40], filename[60], nd_string[16], *pc;
+char notes[64], filter[20], date[40], filename[60], nd_string[16], *pc;
 int eyepiece, quadrant, dquadrant, status, nm;
-int iverbose = 0, is_newdouble = 0;
+int iverbose = 0, is_newdouble = 0, delete_epoch_item;
 
 /* Return if no object has been entered yet: */
 if(i_obj < 0) return(-1);
@@ -592,19 +647,37 @@ rho = NO_DATA;
 drho = NO_DATA;
 theta = NO_DATA;
 dtheta = NO_DATA;
-epoch = -1.;
+BesselEpoch = -1.;
+JulianEpoch = -1.;
 dmag = -1;
 ddmag = 0.;
 filter[0] = '\0';
 notes[0] = '\0';
 
-/* Read date and compute epoch: */
-epoch = 0.;
-status = astrom_compute_epoch_value(b_data, date, &epoch, i_date); 
+/* Read date and compute approximative Bessel epoch from the date: */
+   status = astrom_compute_bessel_epoch_value(b_data, date, &BesselEpoch, 
+                                              i_date); 
 #ifdef DEBUG
-printf("compute epoch with date: epoch=%.2f i_date=%d, status=%d\n", 
-        epoch, i_date, status);
+   printf("compute epoch with date: BesselEpoch=%.2f i_date=%d, status=%d\n", 
+           BesselEpoch, i_date, status);
 #endif
+
+   status = latex_read_svalue(b_data, notes, i_notes);
+   if(comments_wanted == 1) {
+     delete_epoch_item = 0;
+   } else {
+     delete_epoch_item = 1;
+   }
+/* Check if EP= is available in the notes: */
+   status = astrom_read_bessel_epoch_from_notes(notes, &exact_epoch, 
+                                                delete_epoch_item);
+   if(status == 0) BesselEpoch = exact_epoch;
+
+/* Check if EJUL= is available in the notes: */
+   status = astrom_read_julian_epoch_from_notes(notes, &JulianEpoch, 
+                                                delete_epoch_item);
+// Remove trailing and extra blanks:
+   jlp_trim_string(notes, 64);
 
 status = latex_read_dvalue(b_data, &rho, i_rho, iverbose); 
 #ifdef DEBUG
@@ -637,12 +710,8 @@ if(status == 0) eyepiece = (int)(ww+0.5);
 */
      strcpy(filter, "W");
      } 
-   status = latex_read_svalue(b_data, notes, i_notes);
+   status = check_filter(filter, b_data);
 
-/* Check if EP= is available in the notes: */
-   status = astrom_read_epoch_from_notes(notes, &exact_epoch, comments_wanted);
-   if(status == 0) epoch = exact_epoch;
-     
 /* Check if Dm= is available in the notes: */
    astrom_read_dmag_from_notes(notes, &dmag, &ddmag, comments_wanted);
 
@@ -688,7 +757,7 @@ if(!status) {
    me->is_new_double = is_newdouble;
    me->flagged_out = 0;
    me->eyepiece = eyepiece; 
-   me->epoch = epoch; 
+   me->bessel_epoch = BesselEpoch; 
    me->from_recorded_file = astrom_is_record_file(filename);
    strcpy(me->filename, filename);
    strcpy(me->filter, filter);
@@ -714,6 +783,27 @@ else
 return(status);
 }
 /**************************************************************************
+*
+**************************************************************************/
+int check_filter(char *filter, char *b_data)
+{
+int status = -1;
+
+// Remove all blanks:
+  jlp_compact_string(filter, 64);
+  if(!strcmp(filter, "B") || !strcmp(filter, "V")
+     || !strcmp(filter, "R") || !strcmp(filter, "RL")
+     || !strcmp(filter, "I") || !strcmp(filter, "W") ) status = 0;
+
+  if(status == -1) {
+    fprintf(stderr, " Check_filter/Fatal error: filter=%s\n", filter);
+    fprintf(stderr, " b_data=%s\n", b_data);
+    exit(-1);
+   }
+
+return(status);
+}
+/**************************************************************************
 * Read a new measure 
 *
 * INPUT:
@@ -732,14 +822,15 @@ return(status);
 **************************************************************************/
 int astrom_read_new_measure(char *b_data, int i_filename, int i_date, 
                             int i_filter, int i_eyepiece, int i_rho, int i_drho,                            int i_theta, int i_dtheta, int i_notes, 
-                            char *filename2, char *notes2, double *epoch2, 
+                            char *filename2, char *notes2, 
+                            double *BesselEpoch2, 
                             char *filter2, int *eyepiece2, double *rho2, 
                             double *drho2, double *theta2, double *dtheta2)
 {
 int comments_wanted2 = 1;
-double ww, exact_epoch2, dmag2, ddmag2;
+double ww, exact_epoch2, dmag2, ddmag2, JulianEpoch2;
 char date2[40], *pc;
-int quadrant2, dquadrant2, status, nm, iverbose = 0;
+int quadrant2, dquadrant2, status, nm, iverbose = 0, delete_epoch_item;
 
 *eyepiece2 = 0;
 quadrant2 = 0;
@@ -748,18 +839,32 @@ dquadrant2 = 0;
 *drho2 = NO_DATA;
 *theta2 = NO_DATA;
 *dtheta2 = NO_DATA;
-*epoch2 = -1.;
+*BesselEpoch2 = -1.;
+JulianEpoch2 = -1.;
 dmag2 = -1;
 ddmag2 = 0.;
 filter2[0] = '\0';
 notes2[0] = '\0';
 
-/* Read date and compute epoch: */
-status = astrom_compute_epoch_value(b_data, date2, epoch2, i_date); 
+/* Read date and compute approximative Bessel epoch from the date: */
+    status = astrom_compute_bessel_epoch_value(b_data, date2, BesselEpoch2, 
+                                               i_date); 
 #ifdef DEBUG
-printf("compute epoch with date: epoch=%.2f i_date=%d, status=%d\n", 
-        *epoch2, i_date, status);
+    printf("compute BesselEpoch with date: BesselEpoch=%.2f i_date=%d, status=%d\n", 
+            *BesselEpoch2, i_date, status);
 #endif
+   if(comments_wanted2 == 1) {
+     delete_epoch_item = 0;
+   } else {
+     delete_epoch_item = 1;
+   }
+/* Check if EP= is available in the notes: */
+   status = astrom_read_bessel_epoch_from_notes(notes2, &exact_epoch2, 
+                                                delete_epoch_item);
+   if(status == 0) *BesselEpoch2 = exact_epoch2;
+/* Check if EJUL= is available in the notes: */
+   status = astrom_read_julian_epoch_from_notes(notes2, &JulianEpoch2, 
+                                                delete_epoch_item);
 
 status = latex_read_dvalue(b_data, rho2, i_rho, iverbose); 
 #ifdef DEBUG
@@ -792,10 +897,6 @@ if(status == 0) *eyepiece2 = (int)(ww+0.5);
      strcpy(filter2, "W");
      } 
    status = latex_read_svalue(b_data, notes2, i_notes);
-
-/* Check if EP= is available in the notes: */
-   status = astrom_read_epoch_from_notes(notes2, &exact_epoch2, comments_wanted2);
-   if(status == 0) *epoch2 = exact_epoch2;
 
 /* Check if Dm= is available in the notes: */
    astrom_read_dmag_from_notes(notes2, &dmag2, &ddmag2, comments_wanted2);
@@ -835,10 +936,11 @@ return(status);
 * OUTPUT:
 * rho, drho, theta, dtheta
 * eyepiece
-* epoch
+* BesselEpoch
 *
 **************************************************************************/
-int astrom_decode_data(char *b_data, char *date, double *epoch, double *rho, 
+int astrom_decode_data(char *b_data, char *date, double *BesselEpoch, 
+                       double *rho, 
                        double *drho, double *theta, double *dtheta, 
                        int *eyepiece, int i_date, int i_eyepiece, int i_rho, 
                        int i_drho, int i_theta, int i_dtheta)
@@ -867,8 +969,8 @@ if(ncol != 10) {
 *rho = *drho = *theta = *dtheta = 0;
 
 /* Read date: */
-*epoch = 0.;
-status = astrom_compute_epoch_value(b_data, date, epoch, i_date); 
+*BesselEpoch = 0.;
+status = astrom_compute_bessel_epoch_value(b_data, date, BesselEpoch, i_date); 
 
 status = latex_read_dvalue(b_data, rho, i_rho, iverbose); 
 if(!status) status = latex_read_dvalue(b_data, drho, i_drho, iverbose); 
@@ -887,14 +989,14 @@ if(!status) printf(" rho=%.2f drho=%.2f theta=%.2f dtheta=%.2f eyepiece=%d\n",
 return(status);
 }
 /**************************************************************************
-* Read epoch value from date information in column #icol from b_data string
+* Read BesselEpoch value from date information in column #icol from b_data string
 *
 * Input format: dd/mm/yy, e.g. 12/2/2004 or 01/12/1998 or 31/06/2002
-* Output: epoch, as a fraction of year, e.g. 2004.234
+* Output: BesselEpoch, as a fraction of year, e.g. 2004.234
 *
 **************************************************************************/
-int astrom_compute_epoch_value(char *b_data, char *date, double *epoch,
-                               int icol) 
+int astrom_compute_bessel_epoch_value(char *b_data, char *date, 
+                                      double *BesselEpoch, int icol) 
 {
 int ival, status, dd, mm, iyy;
 double yy, time;
@@ -909,7 +1011,7 @@ sscanf(date, "%s", date);
 if(!status) { 
    ival = sscanf(date, "%d/%d/%d", &dd, &mm, &iyy);
 /*
-printf("astrom_compute_epoch_value/date=>%s< dd=%d mm=%d iyy=%d ival=%d\n", 
+printf("astrom_compute_bessel_epoch_value/date=>%s< dd=%d mm=%d iyy=%d ival=%d\n", 
         date, dd, mm, iyy, ival);
 */
    if(ival < 3) status = 1;
@@ -921,10 +1023,10 @@ if(!status) {
 time = 20.5;
 yy = (double)iyy;
 /* In "jlp_fits_utils.c": */
-status = JLP_besselian_epoch(yy, mm, dd, time, epoch);
+status = JLP_besselian_epoch(yy, mm, dd, time, BesselEpoch);
 
 /*
-printf("astrom_compute_epoch_value/ epoch=%f\n", *epoch); 
+printf("astrom_compute_bessel_epoch_value/ BesselEpoch=%f\n", *BesselEpoch); 
 */
 }
 
@@ -980,8 +1082,7 @@ return(0);
 int astrom_ra_sort_objects(OBJECT *obj, int *index_obj, int nobj)
 {
 double *ra;
-int j1, j2, nswap;
-register int i;
+int i, j1, j2, nswap;
 
 ra = (double *)malloc((nobj) * sizeof(double));
 
@@ -1255,10 +1356,10 @@ int astrom_compute_statistics(FILE *fp_out, OBJECT *obj, int nobj, char *filein)
 {
 MEASURE *me;
 double delta_theta, delta_rho;
+char *pc, latex_filein[128];
 int nm, nmeas, no_detected, no_data;
 int nquad, nquad_uncert, is_quad, nbad_quad, k;
-char *pc, latex_filein[128];
-register int i, j;
+int i, j;
 
 /* Compute number of measurements: */
 nmeas = 0;
@@ -1370,24 +1471,25 @@ else {
 return(status);
 }
 /***************************************************************************
-* Read the epoch value if present, 
-* and removes "EP=*" from notes (if comments_wanted == 0) 
+* Read the Besselian epoch value if present, 
+* and removes "EP=*" from notes (if delete_epoch_item != 0) 
 *
 * INPUT:
 *  notes: string from notes column of input file 
 *
 * OUTPUT
-* epoch: -1 if EP was not present
-*  notes: same as input string, but without "EP=*" (if comments_wanted == 0)
+*  BesselEpoch: -1 if EP was not present
+*  notes: same as input string, but without "EJUL=*" (if delete_epoch_item != 0)
 *
 ***************************************************************************/
-int astrom_read_epoch_from_notes(char *notes, double *epoch, int comments_wanted)
+int astrom_read_bessel_epoch_from_notes(char *notes, double *BesselEpoch, 
+                                        int delete_epoch_item)
 {
 char *pc, buffer[80];
 int status, k;
-status = 0;
+status = -1;
 
-*epoch=-1.;
+*BesselEpoch=-1.;
 
 pc = notes;
 k = 0;
@@ -1396,7 +1498,8 @@ while(*pc && strncmp(pc,"EP=",3)) {buffer[k++] = *pc; pc++;}
 /* Syntax is EP=2005.2341 */
 if(!strncmp(pc,"EP=",3)){
  pc +=3;
- sscanf(pc,"%lf", epoch);
+ sscanf(pc,"%lf", BesselEpoch);
+ status = 0;
 
 /* Normal syntax is f.i. "EP=2005.2341 " */
 
@@ -1408,7 +1511,53 @@ if(!strncmp(pc,"EP=",3)){
  buffer[k++] = '\0';
 
 /* Update notes, after removing epoch data: */
-if(!comments_wanted) strcpy(notes,buffer);
+if(delete_epoch_item != 0) strcpy(notes,buffer);
+}
+
+return(status);
+}
+/***************************************************************************
+* Read the Julian epoch value if present, 
+* and removes "EJUL=*" from notes (if delete_epoch_item != 0) 
+*
+* INPUT:
+*  notes: string from notes column of input file 
+*
+* OUTPUT
+*  JulianEpoch: -1 if EJUL was not present
+*  notes: same as input string, but without "EJUL=*" (if delete_epoch_item != 0)
+*
+***************************************************************************/
+int astrom_read_julian_epoch_from_notes(char *notes, double *JulianEpoch, 
+                                        int delete_epoch_item)
+{
+char *pc, buffer[80];
+int status, k;
+status = -1;
+
+*JulianEpoch=-1.;
+
+pc = notes;
+k = 0;
+while(*pc && strncmp(pc,"EJUL=",5)) {buffer[k++] = *pc; pc++;}
+
+/* Syntax is EP=2005.2341 */
+if(!strncmp(pc,"EJUL=",5)){
+ pc +=5;
+ sscanf(pc,"%lf", JulianEpoch);
+ status = 0;
+
+/* Normal syntax is f.i. "EJUL=2005.2341 " */
+
+/* Look for comma, blank or end of notes: */
+ while(*pc && *pc != ',' && *pc != ' ') pc++;
+
+/* Copy end of notes: */
+ while(*pc && k < 79) {pc++; buffer[k++] = *pc;}
+ buffer[k++] = '\0';
+
+/* Update notes, after removing epoch data: */
+if(delete_epoch_item != 0) strcpy(notes,buffer);
 }
 
 return(status);
@@ -1455,7 +1604,7 @@ if(!strncmp(pc,"dm",2)){
  while(*pc && k < 79) {pc++; buffer[k++] = *pc;}
  buffer[k++] = '\0';
 
-/* Update notes, after removing epoch data: */
+/* Update notes, after removing dmag data: */
 if(!comments_wanted) strcpy(notes,buffer);
 }
 
@@ -1478,7 +1627,7 @@ if(!strncmp(pc,"Dm=",3)){
  while(*pc && k < 79) {pc++; buffer[k++] = *pc;}
  buffer[k++] = '\0';
 
-/* Update notes, after removing epoch data: */
+/* Update notes, after removing dmag data: */
 if(!comments_wanted) strcpy(notes,buffer);
 }
 

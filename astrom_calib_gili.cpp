@@ -47,19 +47,29 @@ LQ=3        (Quadrant with long integration)
 *************************************************************************/
 #include "astrom_utils1.h" 
 #include "astrom_utils2.h" 
+#include "jlp_fitsio.h"  // BesselToJulian
 
 static int read_calib_file(char *filecalib, double *calib_scale1, 
-                           int *calib_eyepiece1, int *n_eyepieces1,
-                           double *sign, double *theta0);
+                           int *calib_eyepiece1, int*n_eyepieces1,
+                           int *sign1, double *theta01, double *calib_date1,
+                           int *calib_dd1, int *calib_mm1, int *calib_year1,
+                           int *ncalib1, int ndim);
 
+/*************************************************************************
+*
+*************************************************************************/
+#define NDIM 16
 int main(int argc, char *argv[])
 {
-double calib_scale1[3], theta0, sign;
-int i, calib_eyepiece1[3], n_eyepieces1 = 3; 
+double calib_scale1[NDIM * 8], theta01[NDIM], calib_date1[NDIM];
+int sign1[NDIM]; 
+int i, icalib, calib_eyepiece1[NDIM * 8], n_eyepieces1[NDIM], ncalib1; 
+int calib_dd1[NDIM], calib_mm1[NDIM], calib_year1[NDIM];
+int ndim = NDIM, nval;
 char filein[128], fileout[128], filecalib[128];
 int i_filename, i_date, i_filter, i_eyepiece, i_rho, i_drho, i_theta, i_dtheta; 
 int i_notes, comments_wanted, publi_mode, input_with_header, status;
-int in_astrom_fmt = 1, out_calib_fmt = 1;
+int in_astrom_fmt = 2, out_calib_fmt = 2;
 FILE *fp_in, *fp_out;
 
 /* If command line with "runs" */
@@ -76,7 +86,7 @@ if(argc != 6)
   {
   printf(" Syntax: astrom_calib calibration_file in_file out_file comments_wanted,publi_mode,input_with_header \n");
   printf(" out_rho = in_rho * scale_bin1  (or in_rho * 2 * scale_bin1 if bin=2)\n");
-  printf(" out_theta = in_theta * sign + theta0 \n");
+  printf(" out_theta = in_theta * sign1 + theta01 \n");
 /*
 * publi mode : 1,1,0 with WDS enriched astrom file
 * copy mode: 1,0,0 with raw astrom file
@@ -85,8 +95,8 @@ if(argc != 6)
   printf(" publi_mode = 1 (calibrated and ready for publication)\n");
   printf(" input_with_header = 0 (input LaTeX file without header)\n");
   printf(" input_with_header = 1 (input LaTeX file with header)\n");
-  printf(" Example: runs astrom_calib gili_calib.txt astrom05a.tex tab_calib.tex 0,1,0  (without comments, publication mode, input file without header) in_astrom_fmt,out_calib_fmt \n");
-  printf(" Example: runs astrom_calib gili_calib.txt astrom05a.tex tab_calib.tex 1,0,1  (with comments, no publication, input file with header) 1 \n");
+  printf(" Example: runs astrom_calib gilicalib.txt astrom05a.tex tab_calib.tex 0,1,0  (without comments, publication mode, input file without header) in_astrom_fmt,out_calib_fmt \n");
+  printf(" Example: runs astrom_calib gilicalib.txt astrom05a.tex tab_calib.tex 1,0,1  (with comments, no publication, input file with header) 1 \n");
   printf(" in_astrom_fmt: 1 if (Gili) empty ADS column, 2 if (Calern) no ADS column\n");
   printf(" out_calib_fmt: 1 if (Gili) no filt column, 2 if (Calern) filter columnbut\n");
   exit(-1);
@@ -96,22 +106,40 @@ else
   strcpy(filecalib,argv[1]);
   strcpy(filein,argv[2]);
   strcpy(fileout,argv[3]);
-  sscanf(argv[4],"%d,%d,%d", &comments_wanted, &publi_mode, &input_with_header);
-  sscanf(argv[5],"%d,%d", &in_astrom_fmt, &out_calib_fmt);
+  nval = sscanf(argv[4],"%d,%d,%d", &comments_wanted, &publi_mode, &input_with_header);
+  if(nval != 3) {
+     fprintf(stderr, "Bad syntax: nval=%d (!= 3)\n", nval);
+     exit(-1);
+     }
+  nval = sscanf(argv[5],"%d,%d", &in_astrom_fmt, &out_calib_fmt);
+  if((nval != 2) || ((in_astrom_fmt != 1) && (in_astrom_fmt != 2))
+       || ((out_calib_fmt != 1) && (out_calib_fmt != 2)) ) {
+     fprintf(stderr, "Bad syntax: nval=%d (!= 2 ?) in_astrom_fmt=%d out_calib_fmt=%d\n", 
+         nval, in_astrom_fmt, out_calib_fmt);
+     exit(-1);
+     }
   }
 
-// Read calibration file:
- status = read_calib_file(filecalib, calib_scale1, calib_eyepiece1, 
-                          &n_eyepieces1, &sign, &theta0);
- if(status != 0) return(-1);
-for(i = 0; i < n_eyepieces1; i++) {
-  printf(" OK: out_rho = in_rho * %g (for %d mm eyepiece or bining=%d)\n",
-         calib_scale1[i], calib_eyepiece1[i]);
-  }
-printf(" OK: out_theta = in_theta * %g + %g \n", sign, theta0);
 printf(" OK: filein=%s fileout=%s \n", filein, fileout);
 printf(" OK: comments_wanted=%d publi_mode=%d input_with_header=%d in_astrom_fmt=%d out_calib_fmt=%d\n",
        comments_wanted, publi_mode, input_with_header, in_astrom_fmt, out_calib_fmt);
+
+// Read calibration file:
+status = read_calib_file(filecalib, calib_scale1, calib_eyepiece1, 
+                          n_eyepieces1, sign1, theta01, calib_date1, 
+                          calib_dd1, calib_mm1, calib_year1,
+                          &ncalib1, ndim);
+if(status != 0) return(-1);
+for(icalib = 0; icalib < ncalib1; icalib++) {
+  printf(" calib #%d\n calib_date1=%.4f (%02d/%02d/%d)\n",
+          icalib, calib_date1[icalib], calib_dd1[icalib], 
+          calib_mm1[icalib], calib_year1[icalib]);
+  for(i = 0; i < n_eyepieces1[icalib]; i++) {
+  printf(" out_rho = in_rho * %g (for %d mm eyepiece)\n",
+         calib_scale1[ndim * icalib + i], calib_eyepiece1[ndim * icalib + i]);
+  }
+  printf(" out_theta = in_theta * %d + %g \n", sign1[icalib], theta01[icalib]);
+}
 
 if((fp_in = fopen(filein,"r")) == NULL)
 {
@@ -128,11 +156,17 @@ exit(-1);
 fprintf(fp_out,"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n");
 fprintf(fp_out,"%%%% Automatic calibration of %s with astrom_calib\n", filein);
 fprintf(fp_out,"%%%% JLP / Version of 23/09/2020 \n");
-for(i = 0; i < n_eyepieces1; i++) {
+for(icalib = 0; icalib < ncalib1; icalib++) {
+fprintf(fp_out,"%%%% calib #%d calib_date1=%.4f (%02d/%02d/%d)\n",
+        icalib, calib_date1[icalib], calib_dd1[icalib], 
+        calib_mm1[icalib], calib_year1[icalib]);
+for(i = 0; i < n_eyepieces1[icalib]; i++) {
   fprintf(fp_out,"%%%% out_rho = in_rho * %g (for eyepiece/binning=%d)\n", 
-         calib_scale1[i], calib_eyepiece1[i]);
+         calib_scale1[icalib * ndim + i], calib_eyepiece1[icalib * ndim + i]);
   }
-fprintf(fp_out,"%%%% out_theta = in_theta * %g + %g \n", sign, theta0);
+fprintf(fp_out,"%%%% out_theta = in_theta * %d + %g \n", 
+        sign1[icalib], theta01[icalib]);
+}
 fprintf(fp_out,"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n");
 
 if(publi_mode == 1) {
@@ -184,14 +218,16 @@ if(publi_mode == 1) {
 * 22388+4419 = HO 295 AB & 2004. & & & & & & & \\
 * in_astrom_fmt = 1 (Gili, with WDS=name, Empty ADS col, Epoch, ...)
 * in_astrom_fmt = 2 (Calern, with WDS=name, Epoch, ...)               
-* out_calib_fmt = 1 (Gili, with WDS, Name, Epoch, Eyepiece, rho, err_rho, ...)
+* out_calib_fmt = 1 (Gili, with WDS, Name, Epoch, Eyepiece, rho, ..., Dmag)
 * out_calib_fmt = 2 (Calern, with WDS, Name, Epoch, Filter, Eyepiece, rho, err_r
 */
 // gili_format: in_astrom_fmt=1
 // calern_format: in_astrom_fmt=2
   printf("Will run astrom_calib_publi with in_astrom_fmt=%d\n", in_astrom_fmt);
-  astrom_calib_publi(fp_in, fp_out, calib_scale1, calib_eyepiece1, n_eyepieces1,
-                     theta0, sign, 
+  astrom_calib_publi(fp_in, fp_out, 
+                     calib_date1, calib_dd1, calib_mm1, calib_year1,
+                     calib_scale1, calib_eyepiece1, n_eyepieces1,
+                     theta01, sign1, ncalib1, ndim, 
                      i_filename, i_date, i_filter, i_eyepiece, i_rho, i_drho, 
                      i_theta, i_dtheta, i_notes, comments_wanted, filein,
                      in_astrom_fmt, out_calib_fmt);
@@ -199,8 +235,10 @@ if(publi_mode == 1) {
 * measurements to arcseconds and degrees relative to North 
 */ 
   } else { 
-  astrom_calib_copy(fp_in, fp_out, calib_scale1, calib_eyepiece1, n_eyepieces1,
-                    theta0, sign, 
+  astrom_calib_copy(fp_in, fp_out, 
+                    calib_date1, calib_dd1, calib_mm1, calib_year1,
+                    calib_scale1, calib_eyepiece1, n_eyepieces1,
+                    theta01, sign1, ncalib1, ndim, 
                     i_date, i_eyepiece, i_rho, i_drho, i_theta, i_dtheta,
                     comments_wanted, input_with_header);
   }
@@ -226,18 +264,21 @@ return(0);
 bin1 = 0.0738
 bin2 = 0.1476
 bin4 = 0.2952
-sign = 1.
+sign = 1
 theta0 = 89.0
 
 ***************************************************************************/
 static int read_calib_file(char *filecalib, double *calib_scale1, 
                            int *calib_eyepiece1, int*n_eyepieces1,
-                           double *sign, double *theta0)
+                           int *sign1, double *theta01, double *calib_date1,
+                           int *calib_dd1, int *calib_mm1, int *calib_year1,
+                           int *ncalib1, int ndim)
 {
 FILE *fp_calib;
 char buffer[256];
-double scale0;
-int status = -1, i, ival, jval;
+int dd0, mm0, yy0, sign;
+double scale0, theta0, year0, time0, JulianDate0;
+int status = -1, i, ival, jval, icalib;
 
  if((fp_calib = fopen(filecalib, "r")) == NULL) {
    fprintf(stderr, "read_calib_file/Error opening file: >%s<\n",
@@ -245,70 +286,112 @@ int status = -1, i, ival, jval;
    return(status);
    }
 
-*sign = 0.;
-*theta0 = 0.;
-
+icalib = -1;
 ival = 0;
 jval = 0;
  while(!feof(fp_calib)) {
    if(fgets(buffer, 256, fp_calib)) {
 // Comments start with % or #
      if((buffer[0] != '%') && (buffer[0] != '#')) {
+//     printf("ZZZ %s", buffer);
+       if(buffer[0] == '=') {
+         if(icalib >= 0) { 
+           n_eyepieces1[icalib] = ival;
+           if(jval < 2) {
+            fprintf(stderr, "read_calib_file/Fatal error loading icalib=%d jval=%d\n", 
+                   icalib, jval);
+            exit(-1);
+           }
+         }
+         icalib++;
+         ival = 0;
+         jval = 0;
+         sscanf(&buffer[1], "%d/%d/%d", &dd0, &mm0, &yy0);
+         year0 = (double)yy0;
+         time0 = 0.;
+// int JLP_julian_epoch(double aa, int mm, int idd, double time, double *j_date);
+         JLP_julian_epoch(year0, mm0, dd0, time0, &JulianDate0);
+         calib_dd1[icalib] = dd0;
+         calib_mm1[icalib] = mm0;
+         calib_year1[icalib] = year0;
+         calib_date1[icalib] = JulianDate0;
+         printf("ZZZ icalib=%d calib_date1=%f %02d/%02d/%d\n", 
+                 icalib, calib_date1[icalib], calib_dd1[icalib], 
+                 calib_mm1[icalib], calib_year1[icalib]);
+         }
+       if(icalib >= 0) {
        if(!strncmp(buffer, "10mm =", 6)) {
          sscanf(&buffer[6], "%lf", &scale0);
-         calib_scale1[ival] = scale0;
-         calib_eyepiece1[ival] = 10;
+         calib_scale1[icalib * ndim + ival] = scale0;
+         calib_eyepiece1[icalib * ndim + ival] = 10;
+         ival++;
+       } else if(!strncmp(buffer, "15mm =", 6)) {
+         sscanf(&buffer[6], "%lf", &scale0);
+         calib_scale1[icalib * ndim + ival] = scale0;
+         calib_eyepiece1[icalib * ndim + ival] = 15;
          ival++;
        } else if(!strncmp(buffer, "20mm =", 6)) {
          sscanf(&buffer[6], "%lf", &scale0);
-         calib_scale1[ival] = scale0;
-         calib_eyepiece1[ival] = 20;
+         calib_scale1[icalib * ndim + ival] = scale0;
+         calib_eyepiece1[icalib * ndim + ival] = 20;
+         ival++;
+       } else if(!strncmp(buffer, "24mm =", 6)) {
+         sscanf(&buffer[6], "%lf", &scale0);
+         calib_scale1[icalib * ndim + ival] = scale0;
+         calib_eyepiece1[icalib * ndim + ival] = 24;
          ival++;
        } else if(!strncmp(buffer, "32mm =", 6)) {
          sscanf(&buffer[6], "%lf", &scale0);
-         calib_scale1[ival] = scale0;
-         calib_eyepiece1[ival] = 32;
+         calib_scale1[icalib * ndim + ival] = scale0;
+         calib_eyepiece1[icalib * ndim + ival] = 32;
          ival++;
        } else if(!strncmp(buffer, "bin1 =", 6)) {
          sscanf(&buffer[6], "%lf", &scale0);
-         calib_scale1[ival] = scale0;
-         calib_eyepiece1[ival] = 1;
+         calib_scale1[icalib * ndim + ival] = scale0;
+         calib_eyepiece1[icalib * ndim + ival] = 1;
          ival++;
        } else if(!strncmp(buffer, "bin2 =", 6)) {
          sscanf(&buffer[6], "%lf", &scale0);
-         calib_scale1[ival] = scale0;
-         calib_eyepiece1[ival] = 2;
+         calib_scale1[icalib * ndim + ival] = scale0;
+         calib_eyepiece1[icalib * ndim + ival] = 2;
          ival++;
        } else if(!strncmp(buffer, "bin4 =", 6)) {
          sscanf(&buffer[6], "%lf", &scale0);
-         calib_scale1[ival] = scale0;
-         calib_eyepiece1[ival] = 4;
+         calib_scale1[icalib * ndim + ival] = scale0;
+         calib_eyepiece1[icalib * ndim + ival] = 4;
          ival++;
        } else if(!strncmp(buffer, "sign =", 6)) {
-         sscanf(&buffer[6], "%lf", sign);
+         sscanf(&buffer[6], "%d", &sign);
+         sign1[icalib] = sign;
          jval++;
        } else if(!strncmp(buffer, "theta0 =", 8)) {
-         sscanf(&buffer[8], "%lf", theta0);
+         sscanf(&buffer[8], "%lf", &theta0);
+         theta01[icalib] = theta0;
          jval++;
-       } else {
+       } else if(buffer[0] != '=') {
          fprintf(stderr, "read_calib_file/Bad syntax in line=>%s<\n",
                 buffer);
          }
-     if(jval == 2) {
-       status = 0;
-       break;
-       }
+       } // if icalib >=0
      } // EOF if buffer...
    } // EOF if fgets...
  } // EOF while(!feof...)
 
-*n_eyepieces1 = ival;
-for(i = 0; i < *n_eyepieces1; i++) {
-  printf("read_calib_file_gili/calib_scale1[i]=%f\n", calib_scale1[i]);
-  }
-printf("read_calib_file_gili/sign=%f\n", *sign);
-printf("read_calib_file_gili/theta0=%f\n", *theta0);
+*ncalib1 = icalib;
+for(icalib = 0; icalib < *ncalib1; icalib++) {
+   printf("read_calib_file_gili/calibration #%d\ncalib_date1=%.4f (%02d/%02d/%d)\n",
+           icalib, calib_date1[icalib], calib_dd1[icalib], 
+           calib_mm1[icalib], calib_year1[icalib]);
+   for(i = 0; i < n_eyepieces1[icalib]; i++) {
+     printf("calib_eyepiece[%d]=%d calib_scale1=%.4f\n", 
+            i, calib_eyepiece1[icalib * ndim +i],
+            calib_scale1[icalib * ndim + i]); 
+     }
+   printf("read_calib_file_gili/sign=%d\n", sign1[icalib]);
+   printf("read_calib_file_gili/theta0=%.1f\n", theta01[icalib]);
+ }
 
+ status = 0;
  fclose(fp_calib);
 
 return(status);

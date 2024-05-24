@@ -14,7 +14,6 @@
 #include "latex_utils.h" // latex_get_column_item(), latex_remove_column()
 #include "jlp_string.h"  // (in jlplib/jlp_fits/ ) jlp_cleanup_..
 
-#include "latex_utils.h"  // latex_get_column_item()
 //#include "astrom_utils1.h" 
 //#include "astrom_utils2.h" 
 
@@ -36,6 +35,7 @@ static int gaia_add_parallax(FILE *fp_in, FILE *fp_out,
                              double *plx_array, double *err_plx_array, 
                              char *target_label, int n_plx_array,
                              int out_plx_col, int out_err_plx_col);
+// Now in csv_utils.h csv_read_string():
 static int jlp_csv_get_item(char *in_line, int icol, char *item);
 static int jlp_remove_dollar(char *in_string, char *out_string, int len_string); 
 static int jlp_find_target_index(char *target_label, char *target_name, 

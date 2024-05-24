@@ -93,6 +93,7 @@ if(status) return(-1);
 
 /* Minimum of 1000 points when iformat=4 (since we want a full orbit) */
 if((iformat == 3) || (iformat == 4)) npts_max = MAXI(1000,npts_max);
+printf("npts_max=%d\n", npts_max);
 
 /* strcpy(plotdev,"square/rho.ps");
 */

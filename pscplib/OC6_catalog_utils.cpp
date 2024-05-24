@@ -428,7 +428,7 @@ char compacted_discov_name[40];
 /* Assume that the number of orbits for one object is always less than 1024: */
 char object_orbits[300*1024];
 FILE *fp_in;
-register int i;
+int i;
 
 *found = 0;
 *candidate_found = 0;
@@ -622,7 +622,7 @@ char compacted_discov_name[40];
 /* Assume that the number of orbits for one object is always less than 1024: */
 char object_orbits[300*1024];
 FILE *fp_in;
-register int i;
+int i;
 
 *found = 0;
 *candidate_found = 0;

@@ -49,9 +49,6 @@ double rho_res;
 double theta_res;
 } PSC_MEAS;
 
-static int col_numbers(int* irho, int* idrho, int *itheta, int *idtheta,
-                       int* idmag, int* inotes, int* iorbit_ref, int* irho_o_c, 
-                       int* itheta_o_c, int* igrade, int calib_format_type);
 static int count_objects(char *in_fname, double rho_diff);
 static int modif_errors_table1(char *in_fname, char *out_fname, double rho_diff,
                         double drhodiff_mini, double dthetadiff_mini);
@@ -86,49 +83,6 @@ static int extract_large_dtheta_table1(char *in_fname, double dtheta_max,
                                        char *out_fname);
 static int observations_HDS_TDS_table1(char *in_fname, char *out_fname);
 
-/************************************************************************
-* Set all column numbers of input calib table
-************************************************************************/
-static int col_numbers(int* irho, int* idrho, int *itheta, int *idtheta,
-                       int* idmag, int* inotes, int* iorbit_ref, int* irho_o_c, 
-                       int* itheta_o_c, int* igrade, int calib_format_type)
-{
-/* PISCO2 Gili's format */
-/* 
-WDS & discover & epoch & nbin & rho & drho & theta & dtheta
-& dm & notes & orbit_ref & rho_o_c & theta_o_c & grade \\
-*/
-if(calib_format_type == 1)
-  {
-   *irho = 5;
-   *idrho = 6;
-   *itheta = 7;
-   *idtheta = 8;
-   *idmag = 9;
-   *inotes = 10;
-   *iorbit_ref = 11;
-   *irho_o_c = 12;
-   *itheta_o_c = 13;
-   *igrade = 14;
-/* PISCO Calern format */
-/* 
-WDS & discover & epoch & filter & eyepiece & rho & drho & theta & dtheta
-& notes & orbit_ref & rho_o_c & theta_o_c & grade \\
-*/
-  } else {
-   *irho = 6;
-   *idrho = 7;
-   *itheta = 8;
-   *idtheta = 9;
-   *inotes = 10;
-   *idmag = -1;
-   *iorbit_ref = 11;
-   *irho_o_c = 12;
-   *itheta_o_c = 13;
-   *igrade = 14;
-  }
-return(0);
-}
 /*********************************************************************
 * Remove "$" in latex calib file. (used for negative values in LaTeX)
 **********************************************************************/
@@ -223,7 +177,7 @@ static int printf_psc_meas(PSC_MEAS psc0, char *label)
 printf("%s wds_name=%s discov_name=%s rho=%f drho=%f theta=%f dtheta=%f\n", 
        label,  psc0.wds, psc0.discov, psc0.rho_meas, psc0.drho_meas,
        psc0.theta_meas, psc0.dtheta_meas);
-printf("%s wds_name=%s notes=%s orbit_ref=%s orbit_grade=%d rho_res=%f theta_res=%f\n", 
+printf("%s wds_name=%s notes=%s orbit_ref=%f orbit_grade rho_res=%f theta_res=%f\n", 
        label,  psc0.wds, psc0.notes, psc0.orbit_ref, psc0.orbit_grade,
        psc0.rho_res, psc0.theta_res);
 return(0);
@@ -363,22 +317,15 @@ char discov_name[40], wds_name[40], label[64], old_discov_name[40];
 char buffer[256], rho_meas[40], theta_meas[40], orbit_ref[40], *pc;
 int iline, status, verbose_if_error = 0, nobj, nmeas, nunres, nresid, ndmag;
 int nlines_meas, nquad, orbit_grade;
-int irho, idrho, itheta, idtheta, inotes, iorbit_ref, idmag;
-int irho_o_c, itheta_o_c, igrade, calib_format_type;
 double rho_val, drho_val, theta_val, dtheta_val, dmag_val, dval;
 char drho_meas[40], dtheta_meas[40], dmag_str[40];
 double rho_min, rho_max, drhodiff_min, drhodiff_max;
 double dthetadiff_min, dthetadiff_max;
-int i, resolved;
+int i, irho = 5, i_drho = 6, resolved;
 PSC_MEAS psc_rho_min, psc_rho_max, psc_drhodiff_min, psc_drhodiff_max;
 PSC_MEAS psc_dthetadiff_min, psc_dthetadiff_max;
 FILE *fp_in;
 time_t ttime = time(NULL);
-
-// Calern:
-calib_format_type = 2;
-  col_numbers(&irho, &idrho, &itheta, &idtheta, &idmag, &inotes, &iorbit_ref, 
-                &irho_o_c, &itheta_o_c, &igrade, calib_format_type);
 
 /* Open input table: */
 if((fp_in = fopen(in_fname, "r")) == NULL) {
@@ -432,39 +379,38 @@ while(!feof(fp_in)) {
 // Look for "^*" in line, increase the number of quadrants 
      if(strstr(in_line, "^*") != NULL) nquad++;
 
-/* Get rho measure from column irho: */
-/* Get drho estimate from column idrho: */
+/* Get rho measure from column 5: */
+/* Get drho estimate from column 6: */
       verbose_if_error = 0;
       rho_val = -1;
       drho_val = -1;
 
-      if(latex_get_column_item(in_line, rho_meas, irho, verbose_if_error) == 0){
+      if(latex_get_column_item(in_line, rho_meas, 5, verbose_if_error) == 0){
         if(sscanf(rho_meas, "%lf", &dval) == 1) {
           rho_val = dval;
           nmeas++;
           if(resolved == 0) resolved = 1;
           }
-        if(latex_get_column_item(in_line, drho_meas, idrho, verbose_if_error) == 0){
+        if(latex_get_column_item(in_line, drho_meas, 6, verbose_if_error) == 0){
           if(sscanf(drho_meas, "%lf", &dval) == 1) drho_val = dval;
           }
       }
-/* Get theta measure from column itheta: */
-/* Get dtheta estimate from column idtheta: */
+/* Get theta measure from column 7: */
+/* Get dtheta estimate from column 8: */
       verbose_if_error = 0;
       theta_val = -1;
       dtheta_val = -1;
 
-      if(latex_get_column_item(in_line, theta_meas, itheta, verbose_if_error) == 0){
+      if(latex_get_column_item(in_line, theta_meas, 7, verbose_if_error) == 0){
         if(sscanf(theta_meas, "%lf", &dval) == 1) theta_val = dval;
-        if(latex_get_column_item(in_line, dtheta_meas, idtheta, verbose_if_error) == 0){
+        if(latex_get_column_item(in_line, dtheta_meas, 8, verbose_if_error) == 0){
           if(sscanf(dtheta_meas, "%lf", &dval) == 1) dtheta_val = dval;
           }
       }
-/* Get dmag from column idmag: */
+/* Get dmag from column 9: */
       verbose_if_error = 0;
       dmag_val = -1;
-      if(idmag > 0) {
-      if(latex_get_column_item(in_line, dmag_str, idmag, verbose_if_error) == 0){
+      if(latex_get_column_item(in_line, dmag_str, 9, verbose_if_error) == 0){
         if(sscanf(dmag_str, "%lf", &dval) == 1) {
           dmag_val  = dval;
 #ifdef DEBUG1
@@ -473,9 +419,8 @@ while(!feof(fp_in)) {
           ndmag++;
         }
       }
-      } // dmag > 0
-/* Get orbit ref from column iorbit_ref: */
-      if(latex_get_column_item(in_line, orbit_ref, iorbit_ref, verbose_if_error) == 0){
+/* Get orbit ref from column 11: */
+      if(latex_get_column_item(in_line, orbit_ref, 11, verbose_if_error) == 0){
 #ifdef DEBUG1
         printf("discov_name=%s orbit_ref=%s\n", discov_name, orbit_ref);
 #endif
@@ -506,28 +451,26 @@ int init_psc_meas(PSC_MEAS *psc0, char* wds0, char* dsc0, double epoch0,
                        rho_val, drho_val, theta_val, dtheta_val, 0., 0., 0.);
          rho_max = rho_val;
          }
-       if(rho_val < rho_diff) {
-      if(drho_val < drhodiff_min) {
+      if((rho_val < rho_diff) && (drho_val < drhodiff_min)) {
          init_psc_meas(&psc_drhodiff_min, wds_name, discov_name, 0., 0.,
                        rho_val, drho_val, theta_val, dtheta_val, 0., 0., 0.);
          drhodiff_min = drho_val;
          }
-      if(drho_val > drhodiff_max) {
+      if((rho_val < rho_diff) && (drho_val > drhodiff_max)) {
          init_psc_meas(&psc_drhodiff_max, wds_name, discov_name, 0., 0.,
                        rho_val, drho_val, theta_val, dtheta_val, 0., 0., 0.);
          drhodiff_max = drho_val;
          }
-      if(dtheta_val < dthetadiff_min) {
+      if((rho_val < rho_diff) && (dtheta_val < dthetadiff_min)) {
          init_psc_meas(&psc_dthetadiff_min, wds_name, discov_name, 0., 0.,
                        rho_val, drho_val, theta_val, dtheta_val, 0., 0., 0.);
          dthetadiff_min = dtheta_val;
          }
-      if(dtheta_val > dthetadiff_max) {
+      if((rho_val < rho_diff) && (dtheta_val > dthetadiff_max)) {
          init_psc_meas(&psc_dthetadiff_max, wds_name, discov_name, 0., 0.,
                        rho_val, drho_val, theta_val, dtheta_val, 0., 0., 0.);
          dthetadiff_max = dtheta_val;
          }
-        }
       }
 
 #ifdef DEBUG
@@ -597,16 +540,9 @@ char buffer[256], rho_meas[40], drho_meas[40], *pc, drho_item[32];
 char dtheta_str[40], dtheta_item[32];
 int iline, status, verbose_if_error = 0;
 double rho_val, drho_val, dtheta_val, dval;
-int i;
-int irho, idrho, itheta, idtheta, inotes, iorbit_ref, idmag;
-int irho_o_c, itheta_o_c, igrade, calib_format_type;
+int i, irho = 5, i_drho = 6, i_dtheta = 8;
 FILE *fp_in, *fp_out;
 time_t ttime = time(NULL);
-
-// Calern:
-calib_format_type = 2;
-  col_numbers(&irho, &idrho, &itheta, &idtheta, &idmag, &inotes, &iorbit_ref, 
-                &irho_o_c, &itheta_o_c, &igrade, calib_format_type);
 
 /* Open input table: */
 if((fp_in = fopen(in_fname, "r")) == NULL) {
@@ -650,13 +586,13 @@ while(!feof(fp_in)) {
 /* Get discov_name from column 2: */
      latex_get_column_item(in_line, discov_name, 2, verbose_if_error);
 
-/* Get rho measure from column irho: */
+/* Get rho measure from column 5: */
       verbose_if_error = 0;
       rho_val = -1;
       drho_val = -1;
-  if(latex_get_column_item(in_line, rho_meas, irho, verbose_if_error) == 0){
+  if(latex_get_column_item(in_line, rho_meas, 5, verbose_if_error) == 0){
     if(sscanf(rho_meas, "%lf", &dval) == 1) rho_val = dval;
-    if(latex_get_column_item(in_line, drho_meas, idrho, verbose_if_error) == 0){
+    if(latex_get_column_item(in_line, drho_meas, 6, verbose_if_error) == 0){
        if(sscanf(drho_meas, "%lf", &dval) == 1) drho_val = dval;
        }
     if((rho_val > 0) && (drho_val > 0.)) {
@@ -664,13 +600,13 @@ while(!feof(fp_in)) {
       if((rho_val < rho_diff) && (drho_val < drhodiff_mini)) {
 /* Write new drho with 3 decimals */
         sprintf(drho_item, "%.3f", drhodiff_mini);
-        latex_set_column_item(in_line3, 256, drho_item, 32, idrho, 3);
+        latex_set_column_item(in_line3, 256, drho_item, 32, i_drho, 3);
         }
       } // rho_val > 0
 /* Get dtheta measure from column i_dtheta=8: */
       verbose_if_error = 0;
       dtheta_val = -1;
-     if(latex_get_column_item(in_line, dtheta_str, idtheta, verbose_if_error) == 0){
+     if(latex_get_column_item(in_line, dtheta_str, i_dtheta, verbose_if_error) == 0){
        if(sscanf(dtheta_str, "%lf", &dval) == 1) dtheta_val = dval;
      }
     if(dtheta_val > 0.) {
@@ -682,7 +618,7 @@ while(!feof(fp_in)) {
 #endif
 /* Write new dtheta with 1 decimal */
         sprintf(dtheta_item, "%.1f", dthetadiff_mini);
-        latex_set_column_item(in_line3, 256, dtheta_item, 32, idtheta, 3);
+        latex_set_column_item(in_line3, 256, dtheta_item, 32, i_dtheta, 3);
         }
       } // dtheta_val > 0
     } // rho_meas
@@ -724,16 +660,10 @@ char rho_meas[40], drho_meas[40], theta_meas[40], orbit_ref[40];
 char discov_name[40], wds_name[40], label[64], no_data[40]; 
 int iline, status, verbose_if_error = 0, nobjects, orbit_grade;
 double rho_val, drho_val, theta_val, dval;
-int i, to_output = 0;
-int irho, idrho, itheta, idtheta, inotes, iorbit_ref, idmag;
-int irho_o_c, itheta_o_c, igrade, calib_format_type;
+int i, irho = 5, to_output = 0;
+
 time_t ttime = time(NULL);
 FILE *fp_out, *fp_in;
-
-// Calern:
-calib_format_type = 2;
-  col_numbers(&irho, &idrho, &itheta, &idtheta, &idmag, &inotes, &iorbit_ref, 
-                &irho_o_c, &itheta_o_c, &igrade, calib_format_type);
 
 strcpy(no_data, "\\nodata");
 jlp_compact_string(no_data, 40);
@@ -764,11 +694,11 @@ fprintf(fp_out, "\\begin{table*}\n\
 \\tabcolsep=1mm\n\
 \\footnotesize\n\
 \\centerline{\n\
-\\begin{tabular}{cllclrrc}\n\
+\\begin{tabular}{cllclrr}\n\
 \\hline\n\
 \\bigstruttup\n\
-WDS & Name & Epoch & $\\rho$ & Orbit & {\\scriptsize $ \\Delta \\rho$(O-C)} & {\\scriptsize $ \\Delta \\theta$(O-C)} & Grade \\\\\n\
-& & & (\") & & (\") & (\\degr) \\\\\n\
+WDS & Name & Epoch & $\\rho$ & Orbit & {\\scriptsize $\\Delta \\rho$(O-C)} & {\\scriptsize $\\Delta \\theta$(O-C)} \\\\\n\
+& & & (\") & & (\") & \\\\\n\
 \\hline\n\
 \\bigstruttup");
 
@@ -794,12 +724,11 @@ while(!feof(fp_in)) {
 /* Get discov_name from column 2: */
      latex_get_column_item(in_line, discov_name, 2, verbose_if_error);
 
-/* Get orbit_ref from column iorbit_ref: */
+/* Get orbit_ref from column 11: */
      if(resid_only) {
        to_output = 0;
        verbose_if_error = 0;
-       status = latex_get_column_item(in_line, orbit_ref, iorbit_ref, 
-                verbose_if_error);
+       status = latex_get_column_item(in_line, orbit_ref, 11, verbose_if_error);
        if((status == 0) && (orbit_ref[0] != '\0')) {
 #ifdef DEBUG
          printf("wds=%s discov=%s orbit ref: >%s<\n", 
@@ -812,7 +741,7 @@ while(!feof(fp_in)) {
        to_output = 1;
      }
 
-/* Get rho measure from column irho: */
+/* Get rho measure from column 5: */
       verbose_if_error = 0;
       rho_val = -1;
       drho_val = -1;
@@ -820,7 +749,7 @@ while(!feof(fp_in)) {
     jlp_clean_dollars(rho_meas, 40);
     if(strcmp(rho_meas, no_data)) {
       if(sscanf(rho_meas, "%lf", &dval) == 1) rho_val = dval;
-      if(latex_get_column_item(in_line, drho_meas, idrho, verbose_if_error) == 0){
+      if(latex_get_column_item(in_line, drho_meas, 6, verbose_if_error) == 0){
        if(sscanf(drho_meas, "%lf", &dval) == 1) drho_val = dval;
       }
      }
@@ -828,9 +757,9 @@ while(!feof(fp_in)) {
      rho_meas[0] = '\0';
      }
 
-/* Get theta_obs from column itheta: */
+/* Get theta_obs from column 7: */
     theta_val = -1.;
-    if(latex_get_column_item(in_line, theta_meas, itheta, verbose_if_error) == 0){
+    if(latex_get_column_item(in_line, theta_meas, 7, verbose_if_error) == 0){
       jlp_compact_string(theta_meas, 40);
       if(strcmp(theta_meas, no_data)) {
        if(sscanf(theta_meas, "%lf", &dval) == 1) theta_val = dval;
@@ -849,24 +778,17 @@ while(!feof(fp_in)) {
        && (rho_val < rho_c)) {
 // SHOULD REMOVE THE LAST COLUMNS FIRST !!!!
 // Remove "Notes" column:
-       latex_remove_column(in_line, inotes, 256);
+       latex_remove_column(in_line, 10, 256);
 // Remove "Dm" column:
-       if(calib_format_type == 1) latex_remove_column(in_line, idmag, 256);
+       latex_remove_column(in_line, 9, 256);
 // Remove "dtheta" column:
-       latex_remove_column(in_line, idtheta, 256);
+       latex_remove_column(in_line, 8, 256);
 // Remove "theta" column:
-       latex_remove_column(in_line, itheta, 256);
+//       latex_remove_column(in_line, 7, 256);
 // Remove "drho" column:
-       latex_remove_column(in_line, idrho, 256);
+       latex_remove_column(in_line, 6, 256);
 // Remove "bin" column:
-       if(calib_format_type == 1) 
-         latex_remove_column(in_line, 4, 256);
-       else {
-// Remove "eyepiece" column:
-         latex_remove_column(in_line, 5, 256);
-// Remove "filter" column:
-         latex_remove_column(in_line, 4, 256);
-       }
+       latex_remove_column(in_line, 4, 256);
 // Save to output file:
        fprintf(fp_out, "%s\n", in_line);
        nobjects++;
@@ -903,22 +825,16 @@ scriptsize $\Delta \theta$(O-C)} \\
 static int extract_large_resid_table1(char *in_fname, char *out_fname, 
                                       double rho_res_min, double theta_res_min)
 {
-char in_line[256], in_line_without_dollar[256], buffer[256]; 
+char in_line[256], buffer[256]; 
 char rho_res_str[40], theta_res_str[40], orbit_ref[40], no_data[64];
-char *pc, discov_name[40], wds_name[40], rho_meas[40], label[64]; 
+char discov_name[40], wds_name[40], rho_meas[40], label[64]; 
 int iline, status, verbose_if_error = 0, nobjects, orbit_grade;
 double rho_res_val, theta_res_val, rho_obs_val, rho_calc_val; 
 double dval, relative_test;
 int i;
-int irho, idrho, itheta, idtheta, inotes, iorbit_ref, idmag;
-int irho_o_c, itheta_o_c, igrade, calib_format_type;
+
 time_t ttime = time(NULL);
 FILE *fp_out, *fp_in;
-
-// Calern:
-calib_format_type = 2;
-  col_numbers(&irho, &idrho, &itheta, &idtheta, &idmag, &inotes, &iorbit_ref, 
-                &irho_o_c, &itheta_o_c, &igrade, calib_format_type);
 
 strcpy(no_data, "\\nodata");
 
@@ -964,10 +880,8 @@ while(!feof(fp_in)) {
 // Remove all the non-printable characters and the end of line '\n'
 // from input line:
       jlp_cleanup_string(in_line, 256);
-      strcpy(in_line_without_dollar, in_line);
-      jlp_clean_dollars(in_line_without_dollar, 256);
 #ifdef DEBUG
-      printf("in_line_without_dollar=%s\n", in_line_without_dollar);
+      printf("in_line=%s\n", in_line);
 #endif
 
 // Good lines start with a digit (WDS names...)
@@ -980,36 +894,33 @@ while(!feof(fp_in)) {
 /* Get discov_name from column 2: */
      latex_get_column_item(in_line, discov_name, 2, verbose_if_error);
 
-/* Get rho_obs from column irho: */
+/* Get rho_obs from column 5: */
    rho_obs_val = -1;
-   if(latex_get_column_item(in_line, rho_meas, irho, verbose_if_error) == 0){
+   if(latex_get_column_item(in_line, rho_meas, 5, verbose_if_error) == 0){
     jlp_clean_dollars(rho_meas, 40);
     if(strcmp(rho_meas, no_data)) {
       if(sscanf(rho_meas, "%lf", &dval) == 1) rho_obs_val = dval;
       }
    }
 
-/* Get orbit_ref from column iorbit_ref: */
+/* Get orbit_ref from column 11: */
      verbose_if_error = 0;
      orbit_ref[0] = '\0';
-     status = latex_get_column_item(in_line, orbit_ref, iorbit_ref, 
-              verbose_if_error);
+     status = latex_get_column_item(in_line, orbit_ref, 11, verbose_if_error);
      if((status == 0) && (orbit_ref[0] != '\0')) {
 #ifdef DEBUG
        printf("orbit ref: >%s<\n", orbit_ref);
 #endif
 
-/* Get rho res from column irho_o_c: */
+/* Get rho res from column 12: */
       verbose_if_error = 0;
       rho_res_val = 0;
       theta_res_val = 0;
-      if(latex_get_column_item(in_line_without_dollar, rho_res_str, irho_o_c, 
-            verbose_if_error) == 0){
+      if(latex_get_column_item(in_line, rho_res_str, 12, verbose_if_error) == 0){
        jlp_clean_dollars(rho_res_str, 40);
        if(sscanf(rho_res_str, "%lf", &dval) == 1) rho_res_val = dval;
        rho_calc_val = rho_obs_val - rho_res_val;
-       if(latex_get_column_item(in_line_without_dollar, theta_res_str, 
-             itheta_o_c, verbose_if_error) == 0){
+       if(latex_get_column_item(in_line, theta_res_str, 13, verbose_if_error) == 0){
         jlp_clean_dollars(theta_res_str, 40);
         if(sscanf(theta_res_str, "%lf", &dval) == 1) theta_res_val = dval;
        }
@@ -1034,18 +945,11 @@ while(!feof(fp_in)) {
 #endif
 // SHOULD REMOVE THE LAST COLUMNS FIRST !!!!
 // Remove "Notes" column:
-       latex_remove_column(in_line, inotes, 256);
-       if(calib_format_type == 1) { 
+       latex_remove_column(in_line, 10, 256);
 // Remove "Dm" column:
-        latex_remove_column(in_line, idmag, 256);
+       latex_remove_column(in_line, 9, 256);
 // Remove "bin" column:
-         latex_remove_column(in_line, 4, 256);
-       } else {
-// Remove "eyepiece" column:
-         latex_remove_column(in_line, 5, 256);
-// Remove "filter" column:
-         latex_remove_column(in_line, 4, 256);
-       }
+       latex_remove_column(in_line, 4, 256);
 // Save to output file:
        fprintf(fp_out, "%s\n", in_line);
        nobjects++;
@@ -1093,13 +997,6 @@ double obs_rho[NOBS_MAX], dval, rho_val;
 double obs_theta[NOBS_MAX], theta_val; 
 int iline, status, verbose_if_error = 0;
 int i, iobs, nobs, out_result, same_discov;
-int irho, idrho, itheta, idtheta, inotes, iorbit_ref, idmag;
-int irho_o_c, itheta_o_c, igrade, calib_format_type;
-
-// Calern:
-calib_format_type = 2;
-  col_numbers(&irho, &idrho, &itheta, &idtheta, &idmag, &inotes, &iorbit_ref, 
-                &irho_o_c, &itheta_o_c, &igrade, calib_format_type);
 
 time_t ttime = time(NULL);
 FILE *fp_out, *fp_in;
@@ -1126,7 +1023,6 @@ fprintf(fp_out, "%% Table of objects with two or more measures from: %s \n%% Cre
 fprintf(fp_out, "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% \n");
 
-if(calib_format_type == 1) { 
 fprintf(fp_out, "\\begin{table*}\n\
 \\tabcolsep=1mm\n\
 \\small\n\
@@ -1138,19 +1034,6 @@ WDS & Name & Epoch & Bin. & $\\rho$ & $\\sigma_\\rho$ & \\multicolumn{1}{c}{$\\t
 & & & & & & & & & & & & \\\\\n\
 \\hline\n\
 & & & & & & & & & & & & \\\\\n");
-  } else {
-fprintf(fp_out, "\\begin{table*}\n\
-\\tabcolsep=1mm\n\
-\\small\n\
-\\begin{tabular*}{\\textwidth}{clriccccccllllrr}\n\
-\\hline\n\
-& & & & & & & & & & & & &  \\\\\n\
-WDS & Name & Epoch & Filter & Eyep. & $\\rho$ & $\\sigma_\\rho$ & \\multicolumn{1}{c}{$\\theta$} & $\\sigma_\\theta$ & Dm & Notes & Orbit & {\\scriptsize $\\Delta \\rho$(O-C)} & {\\scriptsize $\\Delta \\theta$(O-C)} \\\\\n\
-& &     &     & (\") & (\") & ($^\\circ$) & ($^\\circ$) & & \\\\\n\
-& & & & & & & & & & & & & \\\\\n\
-\\hline\n\
-& & & & & & & & & & & & & \\\\\n");
-  }
 
 strcpy(no_data, "\\nodata");
 jlp_compact_string(no_data, 40);
@@ -1181,9 +1064,9 @@ while(!feof(fp_in)) {
 /* Get discov_name from column 2: */
      latex_get_column_item(in_line, discov_name, 2, verbose_if_error);
 
-/* Get rho_obs from column irho: */
+/* Get rho_obs from column 5: */
     rho_val = -1.;
-    if(latex_get_column_item(in_line, rho_meas, irho, verbose_if_error) == 0){
+    if(latex_get_column_item(in_line, rho_meas, 5, verbose_if_error) == 0){
       jlp_compact_string(rho_meas, 40);
       if(strcmp(rho_meas, no_data)) {
        if(sscanf(rho_meas, "%lf", &dval) == 1) {
@@ -1194,9 +1077,9 @@ while(!feof(fp_in)) {
       rho_meas[0] = '\0';
       }
 
-/* Get theta_obs from column itheta: */
+/* Get theta_obs from column 7: */
     theta_val = -1.;
-    if(latex_get_column_item(in_line, theta_meas, itheta, verbose_if_error) == 0){
+    if(latex_get_column_item(in_line, theta_meas, 7, verbose_if_error) == 0){
       jlp_compact_string(theta_meas, 40);
       if(strcmp(theta_meas, no_data)) {
        if(sscanf(theta_meas, "%lf", &dval) == 1) {
@@ -1281,8 +1164,8 @@ while(!feof(fp_in)) {
        strcpy(&obs_discov[0], discov_name);
        obs_rho[0] = -1;
        obs_theta[0] = -1;
-       if((latex_get_column_item(in_line, rho_meas, irho, verbose_if_error) == 0)
-       && (latex_get_column_item(in_line, theta_meas, itheta, verbose_if_error) 
+       if((latex_get_column_item(in_line, rho_meas, 5, verbose_if_error) == 0)
+       && (latex_get_column_item(in_line, theta_meas, 7, verbose_if_error) 
            == 0)){
         obs_rho[0] = rho_val;
         obs_theta[0] = theta_val;
@@ -1298,9 +1181,10 @@ fclose(fp_in);
 
 fprintf(fp_out, "\\hline\n\
 \\end{tabular*}\n\
-Note: In column %d, the exponent $^*$ indicates that the position angle\n\
+Note: In column 7, the exponent $^*$ indicates that the position angle\n\
 $\\theta$ could be determined without the 180$^\\circ$ ambiguity.\\\\\n\
-\\end{table*}\n", itheta);
+ In column 7,  $!$ indicates that $\\theta$ could not be determined neither with this value, nor with WDS CHARA last measurement.\\\\\n\
+\\end{table*}\n");
 
 fclose(fp_out);
 return(0);
@@ -1782,14 +1666,14 @@ FILE *fp_out, *fp_in;
 
 /* Open input table: */
 if((fp_in = fopen(in_fname, "r")) == NULL) {
-   fprintf(stderr, "sort_measures_table1/Fatal error opening input table %s\n",
+   fprintf(stderr, "extract_twomeas_table1/Fatal error opening input table %s\n",
            in_fname);
     return(-1);
   }
 
 /* Open output table: */
   if((fp_out = fopen(out_fname, "w")) == NULL) {
-    fprintf(stderr, "sort_measures_table1/Fatal error opening output file: %s\n",
+    fprintf(stderr, "_table1/Fatal error opening output file: %s\n",
            out_fname);
     return(-1);
    }
@@ -1924,16 +1808,9 @@ char buffer[256], rho_meas[40], drho_meas[40], *pc, drho_item[32];
 char dtheta_str[40], dtheta_item[32];
 int iline, status, verbose_if_error = 0;
 double rho_val, drho_val, dtheta_val, dval;
-int i;
-int irho, idrho, itheta, idtheta, inotes, iorbit_ref, idmag;
-int irho_o_c, itheta_o_c, igrade, calib_format_type;
+int i, irho = 5, i_drho = 6, i_dtheta = 8;
 FILE *fp_in, *fp_out;
 time_t ttime = time(NULL);
-
-// Calern:
-calib_format_type = 2;
-  col_numbers(&irho, &idrho, &itheta, &idtheta, &idmag, &inotes, &iorbit_ref, 
-                &irho_o_c, &itheta_o_c, &igrade, calib_format_type);
 
 /* Open input table: */
 if((fp_in = fopen(in_fname, "r")) == NULL) {
@@ -1976,19 +1853,19 @@ while(!feof(fp_in)) {
 /* Get discov_name from column 2: */
      latex_get_column_item(in_line, discov_name, 2, verbose_if_error);
 
-/* Get rho measure from column irho: */
+/* Get rho measure from column 5: */
       verbose_if_error = 0;
       rho_val = -1;
       drho_val = -1;
-  if(latex_get_column_item(in_line, rho_meas, irho, verbose_if_error) == 0){
+  if(latex_get_column_item(in_line, rho_meas, 5, verbose_if_error) == 0){
     if(sscanf(rho_meas, "%lf", &dval) == 1) rho_val = dval;
-    if(latex_get_column_item(in_line, drho_meas, idrho, verbose_if_error) == 0){
+    if(latex_get_column_item(in_line, drho_meas, 6, verbose_if_error) == 0){
        if(sscanf(drho_meas, "%lf", &dval) == 1) drho_val = dval;
        }
-/* Get dtheta measure from column idtheta: */
+/* Get dtheta measure from column i_dtheta=8: */
       verbose_if_error = 0;
       dtheta_val = -1;
-     if(latex_get_column_item(in_line, dtheta_str, idtheta, verbose_if_error) == 0){
+     if(latex_get_column_item(in_line, dtheta_str, i_dtheta, verbose_if_error) == 0){
        if(sscanf(dtheta_str, "%lf", &dval) == 1) dtheta_val = dval;
      }
     if(dtheta_val > dtheta_max) {
@@ -2022,17 +1899,10 @@ char buffer[256], rho_meas[40], drho_meas[40], *pc, drho_item[32];
 char dtheta_str[40], dtheta_item[32], comments_str[32];
 int iline, status, verbose_if_error = 0, new_double = 0;
 double rho_val, drho_val, dtheta_val, dval;
-int i, n_tds, n_hds, n_tds_res, n_hds_res;
+int i, irho = 5, i_drho = 6, i_dtheta = 8, n_tds, n_hds, n_tds_res, n_hds_res;
 int n_unres, n_NR;
-int irho, idrho, itheta, idtheta, inotes, iorbit_ref, idmag;
-int irho_o_c, itheta_o_c, igrade, calib_format_type;
 FILE *fp_in, *fp_out;
 time_t ttime = time(NULL);
-
-// Calern:
-calib_format_type = 2;
-  col_numbers(&irho, &idrho, &itheta, &idtheta, &idmag, &inotes, &iorbit_ref, 
-                &irho_o_c, &itheta_o_c, &igrade, calib_format_type);
 
 /* Open input table: */
 if((fp_in = fopen(in_fname, "r")) == NULL) {
@@ -2086,13 +1956,13 @@ while(!feof(fp_in)) {
    latex_get_column_item(in_line, comments_str, 10, verbose_if_error);
    if(strstr(comments_str, "ND") != NULL) new_double = 1;
    if(strstr(comments_str, "NR") != NULL) n_NR++;
-/* Get rho measure from column irho: */
+/* Get rho measure from column 5: */
       verbose_if_error = 0;
       rho_val = -1;
       drho_val = -1;
-   if(latex_get_column_item(in_line, rho_meas, irho, verbose_if_error) == 0){
+   if(latex_get_column_item(in_line, rho_meas, 5, verbose_if_error) == 0){
     if(sscanf(rho_meas, "%lf", &dval) == 1) rho_val = dval;
-    if(latex_get_column_item(in_line, drho_meas, idrho, verbose_if_error) == 0){
+    if(latex_get_column_item(in_line, drho_meas, 6, verbose_if_error) == 0){
        if(sscanf(drho_meas, "%lf", &dval) == 1) drho_val = dval;
        }
     }

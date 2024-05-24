@@ -371,7 +371,7 @@ static int read_series_of_measures(char *in_line, FILE *fp_calib_table,
                                    double *err_rho_o, double *err_theta_o, 
                                    int *nmeas)
 {
-register int kk;
+int kk;
 int comp2_is_AB, object2_is_ADS;
 int line_is_OK, verbose_if_error = 0, status;
 char buffer[80], name1[40], comp_name1[40], name2[40], comp_name2[40];
@@ -460,7 +460,7 @@ static int read_series_of_measures_gili(char *in_line, FILE *fp_calib_table,
                                    double *err_rho_o, double *err_theta_o, 
                                    int *nmeas, int gili_format)
 {
-register int kk;
+int kk;
 int comp2_is_AB, object2_is_ADS;
 int line_is_OK, verbose_if_error = 0, status;
 char buffer[80], name1[40], comp_name1[40], name2[40], comp_name2[40];
@@ -839,6 +839,9 @@ jlp_compact_string(comp_name1, 40);
 if(!strcmp(comp_name1, "AB") || *comp_name1 == '\0') comp_is_AB = 1;
  else comp_is_AB = 0;
 
+#ifdef DEBUG
+  printf("get_values: object_name=%s comp=%s\n", object_name1, comp_name1);
+#endif
 
 /* Open LaTeX RESID table: */
 if((fp_resid_table = fopen(resid_fname, "r")) == NULL) {
@@ -899,6 +902,12 @@ printf("comp_is_AB=%d< comp0_is_AB=%d<\n", comp_is_AB, comp0_is_AB);
 
 // Orbit reference in column 2:
         latex_get_column_item(in_line, orbit_ref0, 2, verbose_if_error);
+
+#ifdef DEBUG
+        printf("DEBUG/ epoch_o_c=%f rho_val0=%f orbit_grade=%d ref0=%s ref=%s\n", 
+               epoch_o_c, rho_val0, orbit_grade0, orbit_ref0, old_orbit_ref); 
+#endif
+
 /* Truncate to the first word only 
 * Cou1973b - Couteau (1973b)    => Cou1973b
 */

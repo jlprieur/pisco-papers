@@ -236,9 +236,12 @@ return(0);
 *                    0 if no header at all
 * 
 *************************************************************************/
-int astrom_calib_copy(FILE *fp_in, FILE *fp_out, double *calib_scale1, 
-                      int *calib_eyepiece1, int n_eyepieces1, double theta0, 
-                      double sign, int i_date, int i_eyepiece, int i_rho, 
+int astrom_calib_copy(FILE *fp_in, FILE *fp_out, 
+                      double *calib_date1, int *calib_dd1, int *calib_mm1,
+                      int *calib_year1, double *calib_scale1,
+                      int *calib_eyepiece1, int *n_eyepieces1,
+                      double *theta01, int *sign1, int ncalib1, int ndim,
+                      int i_date, int i_eyepiece, int i_rho, 
                       int i_drho, int i_theta, int i_dtheta, 
                       int comments_wanted, int input_with_header)
 {
@@ -321,9 +324,12 @@ printf(" line_is_opened=%d\n", line_is_opened);
 #endif
      status = 0;
      if(!line_is_opened) { 
-       status = astrom_calib_data_copy(b_data, b_in, calib_scale1, 
+       status = astrom_calib_data_copy(b_data, b_in, 
+                                       calib_date1, calib_dd1, calib_mm1, 
+                                       calib_year1, calib_scale1, 
                                        calib_eyepiece1, n_eyepieces1,
-                                       theta0, sign, i_date, 
+                                       theta01, sign1, ncalib1, ndim,
+                                       i_date, 
                                        i_eyepiece, i_rho, i_drho, i_theta, 
                                        i_dtheta);
 // Not a good line with measurements, skip it
@@ -343,16 +349,8 @@ printf(" line_is_opened=%d\n", line_is_opened);
         astrom_check_if_object_name(b_in, &contains_object_name,
                                     &contains_WDS_name);
         if(nlines > nl_max && !contains_object_name) {
-          fprintf(fp_out,"\\hline \n");
-          fprintf(fp_out,"\\end{tabular} \n");
-          fprintf(fp_out,"\\end{table*} \n");
-/* Before: \\newpage, but problems with "Too many unprocessed floats"
-*/
-          fprintf(fp_out,"\n\\clearpage \n");
-          fprintf(fp_out,"\\begin{table*} \n");
-          fprintf(fp_out,"\\tabcolsep=1mm \n");
-          fprintf(fp_out,"\\caption{Relative astrometry of binary stars (cont.)} \n");
-          fprintf(fp_out,"\\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|} \n");
+          fprintf(fp_out, "\\jlpEndTable \n\\jlpBeginTable \n");
+
 /* Contained in file:
           fprintf(fp_out,"\\hline \n");
 */
@@ -369,9 +367,7 @@ printf(" line_is_opened=%d\n", line_is_opened);
 } /* EOF while loop */
 
 /* Epilog: */
-     fprintf(fp_out,"\\hline \n");
-     fprintf(fp_out,"\\end{tabular} \n");
-     fprintf(fp_out,"\\end{table*} \n");
+     fprintf(fp_out,"\\jlpEndTable \n");
      fprintf(fp_out,"\\end{document} \n");
 
 printf("End at line %d\n", iline);
@@ -397,9 +393,12 @@ return(0);
 * out_calib_fmt: = 1 if gili_format (no filter column)
 *                = 2 if calern_format (filter column)
 *************************************************************************/
-int astrom_calib_publi(FILE *fp_in, FILE *fp_out,  double *calib_scale1,
-                       int *calib_eyepiece1, int n_eyepieces1, double theta0, 
-                       double sign, int i_filename, int i_date, int i_filter,
+int astrom_calib_publi(FILE *fp_in, FILE *fp_out,  
+                       double *calib_date1, int *calib_dd1, int *calib_mm1,
+                       int *calib_year1, double *calib_scale1,
+                       int *calib_eyepiece1, int *n_eyepieces1,
+                       double *theta01, int *sign1, int ncalib1, int ndim,
+                       int i_filename, int i_date, int i_filter,
                        int i_eyepiece, int i_rho, int i_drho,
                        int i_theta, int i_dtheta, int i_notes,
                        int comments_wanted, char *filein, int in_astrom_fmt,
@@ -439,8 +438,9 @@ if(nobj == 0) {
   return(-1);
   }
 
-astrom_calibrate_measures(obj, nobj, calib_scale1, calib_eyepiece1, 
-                          n_eyepieces1, theta0, sign);
+astrom_calibrate_measures(obj, nobj, calib_date1, calib_dd1, calib_mm1, 
+                          calib_year1, calib_scale1, calib_eyepiece1, 
+                          n_eyepieces1, theta01, sign1, ncalib1, ndim);
 
 /* Sort the objects according to their Right Ascension: */
 astrom_ra_sort_objects(obj, index_obj, nobj);
@@ -493,7 +493,7 @@ int astrom_read_measures(FILE *fp_in, int comments_wanted, OBJECT *obj,
                          int i_drho, int i_theta, int i_dtheta, int i_notes,
                          int with_wds_data, int in_astrom_fmt)
 {
-char b_in[NMAX], b_data[NMAX];
+char b_in[NMAX], b_data[NMAX], NR_string[64], Nodata_string[64];
 char wds_name[40], discov_name[40], ads_name[40]; 
 int inside_array, line_is_opened, status, line_to_reject, i_obj;
 int input_with_header;
@@ -518,6 +518,8 @@ if(input_with_header == 0)
  else 
   inside_array = 0;
 
+strcpy(NR_string, "NR");
+strcpy(Nodata_string, "nodata");
 line_to_reject = 0;
 line_is_opened = 0;
 wds_name[0] = '\0';
@@ -573,7 +575,7 @@ while(!feof(fp_in))
      if(!line_is_opened) { 
 #ifdef DEBUG
 printf("\n astrom_read_measures/New line: >%s<\n", b_data);
-printf(" astrom_read_measures/Trying to add a new object, current nobj=%d (wds_data=%d)\n", 
+printf(" astrom_read_measures/Trying to add a new object, current nobj=%d (with_wds_data=%d in inpute latex file)\n", 
        *nobj, with_wds_data);
 #endif
 /* Try to add a new object and add the parameters of this object to obj: */
@@ -583,12 +585,14 @@ printf(" astrom_read_measures/Trying to add a new object, current nobj=%d (wds_d
        else 
             status = astrom_add_new_object_without_wds_data(b_data, obj, nobj,
                                                             in_astrom_fmt); 
+#ifdef DEBUG
+  printf("from astrom_add_new_object_with_wds_data: status=%d\n", status);
+#endif
        if(status == 0) {
 /* Index of current object in OBJECT structure array: */
           i_obj = *nobj - 1;
           (obj[i_obj]).nmeas = 0;
           }
-
 
 // If status was zero, it was a new object line,
 // if it was not zero, it was a line containing rho, theta,... i.e. the measures
@@ -600,14 +604,18 @@ printf(" astrom_read_measures/Trying to add a new object, current nobj=%d (wds_d
 printf("astrom_read_measures/Adding new measurement for object #i_obj=%d nm=%d (nobj=%d, status=%d)\n", 
          i_obj, (obj[i_obj]).nmeas, *nobj, status);
 #endif
-          if(status == 0) {
+// Search for substring "NR" in string "b_data":
+          pc = strstr(b_data, NR_string);
+// Search for substring "nodata" in string "b_data":
+          pc1 = strstr(b_data, Nodata_string);
+          if((status == 0) || (pc != NULL) || (pc1 != NULL)) {
            astrom_add_new_measure(b_data, obj, i_obj, i_filename, i_date, 
-                           i_filter, i_eyepiece, i_rho, i_drho, i_theta, 
-                           i_dtheta, i_notes, comments_wanted);
-           } 
+                                  i_filter, i_eyepiece, i_rho, i_drho, i_theta, 
+                                  i_dtheta, i_notes, comments_wanted);
+           }
 #ifdef DEBUG
-printf("astrom_read_measures/ nmeas=%d rho=%.2f theta=%.2f\n", obj[i_obj].meas[0].rho,
-        (obj[i_obj]).nmeas, obj[i_obj].meas[0].theta);
+printf("astrom_read_measures/ nmeas=%d rho=%.2f theta=%.2f\n", 
+        obj[i_obj].meas[0].rho, (obj[i_obj]).nmeas, obj[i_obj].meas[0].theta);
 #endif
          }
 
@@ -639,7 +647,7 @@ int astrom_add_new_object_with_wds_data(char *b_data, OBJECT *obj, int *nobj,
 { 
 OBJECT *ob;
 double WR, WT, WY;
-char wds_name[40], discov_name[40], ads_name[40], *pc, buffer[40];
+char wds_name[64], discov_name[64], ads_name[64], *pc, buffer[40];
 char comp_name[40];
 int status, ih, im;
 
@@ -788,7 +796,7 @@ int astrom_mean_for_paper2(OBJECT *obj, int nobj)
 {
 MEASURE *me, *me_prev;
 int rec_dir, rec_dir_prev, nm, no_data_prev, no_data;
-register int i, j;
+int i, j;
 
 
 for(i = 0; i < nobj; i++) {
@@ -816,7 +824,7 @@ for(i = 0; i < nobj; i++) {
       } else {
 /* Process measurements when two measurements refer to same epoch,
 * with direct/recorded files: */ 
-      if((me->epoch == me_prev->epoch) 
+      if((me->bessel_epoch == me_prev->bessel_epoch) 
          && (me->filter[0] == me_prev->filter[0])
          && (me->eyepiece == me_prev->eyepiece)
          && (rec_dir * rec_dir_prev) == -1) {
@@ -881,7 +889,7 @@ int astrom_mean_for_full_table(OBJECT *obj, int nobj)
 MEASURE *me, *me_now;
 int nj0, j0[256], j_used[256], quadrant_is_found, quadrant_value; 
 int nm, ndone;
-register int i, j;
+int i, j;
 
 
 for(i = 0; i < nobj; i++) {
@@ -915,7 +923,7 @@ for(i = 0; i < nobj; i++) {
        me = &(obj[i]).meas[j];
 /* Record all the measurements refering to same epoch,
 */
-      if((me->epoch == me_now->epoch) 
+      if((me->bessel_epoch == me_now->bessel_epoch) 
          && (me->filter[0] == me_now->filter[0])
          && (me->eyepiece == me_now->eyepiece)
          && !me->flagged_out ) {

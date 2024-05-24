@@ -385,7 +385,7 @@ strcpy(title, "");
 grid = 0;
 jlp_axes = 1;
 
-printf("orbitplot_dx_or_dy/plotdev= %s\n", plotdev);
+printf("orbitplot_dx_or_dy/plotdev= %si npts_max=%d\n", plotdev, npts_max);
 orbit_plot_curves(xplot, yplot, npts_max, npts, ncurves, jlp_axes, grid,
                   xlabel, ylabel, title, dxy_infile, comments, plotdev);
 
@@ -423,12 +423,14 @@ char nchar[8], pcolor[30], out_filename[64];
 
 orbit_curves_min_max(xplot, yplot, npts_max, npts, ncurves, &xmin, &ymin, 
                      &xmax, &ymax);
+printf("438/xmin=%f xmax=%f \n", xmin, xmax);
+printf("438/ymin=%f ymax=%f \n", ymin, ymax);
 
 /* Initialize plotting device: 
 * plan: flag set to 1 if same scale in X and Y
 */
  iplan = 0;
- strcpy(out_filename, "tmp.ps");
+ strcpy(out_filename, "tmp1.ps");
  status = JLP_DEVICE_CURVE(plotdev, out_filename, &xmin, &xmax, &ymin, &ymax, 
                            &iplan, title, &idv);
 if(status) {
@@ -459,11 +461,11 @@ if(grid) {
 expand = 1.2;
 ticks_in = 0;
 auto_scale = 0;
-iplan = 1;
-xmin_user = 0.;
-xmax_user = 1.;
-ymin_user = 0.;
-ymax_user = 1.;
+iplan = 0;
+xmin_user = xmin;
+xmax_user = xmax;
+ymin_user = ymin;
+ymax_user = ymax;
 newplot210(xplot, yplot, errx, erry, npts, npts_max, ncurves,
           xmin_user, xmax_user, ymin_user, ymax_user, auto_scale, iplan,
           y_is_reversed,
@@ -668,11 +670,15 @@ while(!feof(fp_in)) {
     if(in_line[0] != '%') {
 
 orbit_read_column_from_line(in_line, 1, &epoch);
+printf("433/ epoch=%f\n", epoch);
+
 /* Compute mean of values within one year: */
 if(epoch > epoch0 + epoch_bin_width) {
   if(nvalues > 0) {
        xplot[*npts] = sum1 /(float)nvalues; 
+printf("433/ xplot[%d]=%f\n", *npts, xplot[*npts]);
        yplot[*npts] = sum2 /(float)nvalues; 
+printf("433/ yplot[%d]=%f\n", *npts, yplot[*npts]);
        (*npts)++;
      }
   sum1 = 0.;

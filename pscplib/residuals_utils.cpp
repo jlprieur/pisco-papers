@@ -36,7 +36,7 @@ int compute_ephemerid_of_multiple_system(int nber_of_orbits,
 {
 double wtheta, wrho;
 double wx, wy;
-register int k;
+int k;
 
 /* Compute the ephemerids corresponding to the observation epoch: */
 wx = 0.;

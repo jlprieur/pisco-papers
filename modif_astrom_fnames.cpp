@@ -8,6 +8,7 @@
 * Version 23/05/2018
 *************************************************************************/
 #include "jlp_catalog_utils.h"
+#include "jlp_string.h"
 
 #define DEBUG
 #define DEBUG_1
@@ -85,7 +86,7 @@ while(!feof(fp_in)) {
   if(fgets(in_line, 256, fp_in)) {
     iline++;
 // Remove the end of line '\n' from input line:
-    cleanup_string(in_line, 256);
+    jlp_cleanup_string(in_line, 256);
 
   strcpy(in_line3, in_line);
   if(in_line3[0] == '&') {
